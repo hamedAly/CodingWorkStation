@@ -1,0 +1,49 @@
+# Build outputs
+bin/
+obj/
+out/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/
+
+# NuGet
+*.nupkg
+packages/
+nuget.props
+nuget.targets
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Runtime data
+models/
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.*
+appsettings.*.json
+!appsettings.Development.json
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~

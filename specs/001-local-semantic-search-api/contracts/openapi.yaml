@@ -1,0 +1,313 @@
+openapi: 3.0.3
+info:
+  title: Local Semantic Search API
+  description: >
+    A 100% local Semantic Search Web API for indexing and searching codebases.
+    Consumed by AI Agents to understand local code before modifying it.
+    All operations run fully offline — no external API calls.
+  version: 1.0.0
+  contact:
+    name: Semantic Search API
+
+servers:
+  - url: http://localhost:5000
+    description: Local development (Kestrel)
+  - url: http://localhost/SemanticSearch
+    description: IIS deployment
+
+paths:
+  /api/search/index:
+    post:
+      operationId: indexProject
+      summary: Index a local codebase
+      description: >
+        Traverses the provided project path, chunks relevant source files,
+        generates local embeddings, and upserts them into the vector database
+        tagged with the project key. Returns 202 Accepted immediately;
+        indexing runs in the background.
+      tags:
+        - Indexing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexRequest'
+            example:
+              projectPath: "D:\\Projects\\MyApp"
+              projectKey: "my-app"
+      responses:
+        '202':
+          description: Indexing request accepted and queued for background processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexResponse'
+              example:
+                projectKey: "my-app"
+                status: "queued"
+                message: "Indexing has been queued for project 'my-app'."
+        '400':
+          description: Validation error (empty project key, empty path, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+              example:
+                type: "https://tools.ietf.org/html/rfc9110#section-15.5.1"
+                title: "One or more validation errors occurred."
+                status: 400
+                errors:
+                  projectPath:
+                    - "ProjectPath does not exist."
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/search/query:
+    post:
+      operationId: searchProject
+      summary: Semantic search within an indexed codebase
+      description: >
+        Generates an embedding for the query, performs cosine similarity search
+        filtered by project key, and returns the top-K most relevant code chunks.
+      tags:
+        - Search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+            example:
+              query: "user authentication middleware"
+              projectKey: "my-app"
+              topK: 5
+      responses:
+        '200':
+          description: Search results returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              example:
+                results:
+                  - filePath: "D:\\Projects\\MyApp\\src\\Auth\\AuthMiddleware.cs"
+                    relevanceScore: 0.87
+                    snippet: "public class AuthMiddleware\n{\n    public async Task InvokeAsync(HttpContext context)..."
+                    startLine: 12
+                    endLine: 45
+                  - filePath: "D:\\Projects\\MyApp\\src\\Auth\\JwtHandler.cs"
+                    relevanceScore: 0.72
+                    snippet: "public class JwtHandler\n{\n    public string GenerateToken(User user)..."
+                    startLine: 1
+                    endLine: 38
+        '400':
+          description: Validation error (empty query, empty project key, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/search/status/{projectKey}:
+    get:
+      operationId: getProjectStatus
+      summary: Get indexing status for a project
+      description: >
+        Returns indexing statistics for the specified project key,
+        including whether it has been indexed, file/chunk counts,
+        and the last indexing timestamp.
+      tags:
+        - Status
+      parameters:
+        - name: projectKey
+          in: path
+          required: true
+          description: Unique project identifier
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 128
+          example: "my-app"
+      responses:
+        '200':
+          description: Project status returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+              examples:
+                indexed:
+                  summary: Previously indexed project
+                  value:
+                    isIndexed: true
+                    totalFiles: 142
+                    totalChunks: 3847
+                    lastUpdated: "2026-03-14T15:30:00Z"
+                notIndexed:
+                  summary: Never-indexed project
+                  value:
+                    isIndexed: false
+                    totalFiles: 0
+                    totalChunks: 0
+                    lastUpdated: null
+        '400':
+          description: Validation error (empty project key)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationProblemDetails'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+components:
+  schemas:
+    IndexRequest:
+      type: object
+      required:
+        - projectPath
+        - projectKey
+      properties:
+        projectPath:
+          type: string
+          description: Absolute path to the project directory to index
+          minLength: 1
+          example: "D:\\Projects\\MyApp"
+        projectKey:
+          type: string
+          description: Unique identifier for this project (used for partitioning)
+          minLength: 1
+          maxLength: 128
+          example: "my-app"
+
+    IndexResponse:
+      type: object
+      properties:
+        projectKey:
+          type: string
+          description: The project key that was queued for indexing
+        status:
+          type: string
+          enum: [queued]
+          description: Current status of the indexing operation
+        message:
+          type: string
+          description: Human-readable status message
+
+    SearchRequest:
+      type: object
+      required:
+        - query
+        - projectKey
+      properties:
+        query:
+          type: string
+          description: Natural language search query
+          minLength: 1
+          example: "user authentication middleware"
+        projectKey:
+          type: string
+          description: Project key to search within
+          minLength: 1
+          maxLength: 128
+          example: "my-app"
+        topK:
+          type: integer
+          description: Maximum number of results to return
+          minimum: 1
+          maximum: 100
+          default: 5
+          example: 5
+
+    SearchResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResultItem'
+
+    SearchResultItem:
+      type: object
+      properties:
+        filePath:
+          type: string
+          description: Absolute path of the source file
+        relevanceScore:
+          type: number
+          format: float
+          description: Cosine similarity score (0.0 to 1.0)
+          minimum: 0
+          maximum: 1
+        snippet:
+          type: string
+          description: Code chunk text content
+        startLine:
+          type: integer
+          description: First line number of the chunk (1-based)
+          minimum: 1
+        endLine:
+          type: integer
+          description: Last line number of the chunk (1-based, inclusive)
+          minimum: 1
+
+    StatusResponse:
+      type: object
+      properties:
+        isIndexed:
+          type: boolean
+          description: Whether any chunks exist for this project
+        totalFiles:
+          type: integer
+          description: Number of files that have been indexed
+          minimum: 0
+        totalChunks:
+          type: integer
+          description: Total number of chunks stored
+          minimum: 0
+        lastUpdated:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 timestamp of last completed indexing (null if never indexed)
+
+    ValidationProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string

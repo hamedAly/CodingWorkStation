@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SemanticSearch.Application/SemanticSearch.Application.csproj" />
+    <Project Path="src/SemanticSearch.Domain/SemanticSearch.Domain.csproj" />
+    <Project Path="src/SemanticSearch.Infrastructure/SemanticSearch.Infrastructure.csproj" />
+    <Project Path="src/SemanticSearch.WebApi/SemanticSearch.WebApi.csproj" />
+  </Folder>
+</Solution>

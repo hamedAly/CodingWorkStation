@@ -31,6 +31,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-15
 - SQL Server (read-only — user session/claims from JWT; no new tables) (027-diagnosis-popup)
 - C# / .NET 8 (backend), TypeScript / React 18 (frontend) + HugeRTE v1.0.9 + @hugerte/hugerte-react v2.0.2, nspell (Hunspell-compatible JS spell checker), MediatR, FluentValidation, Entity Framework Core 9, React Query, Zustand, Axios (029-editor-spell-check)
 - SQL Server (PXMain database, PXReports schema) via EF Core (029-editor-spell-check)
+- C# / .NET 10 + ASP.NET Core 10, Microsoft.ML.OnnxRuntime, Microsoft.ML.Tokenizers, SQLite (Microsoft.Data.Sqlite), MediatR, FluentValidation (001-local-semantic-search-api)
+- SQLite with vector storage (file-based, absolute paths under IIS ContentRootPath) (001-local-semantic-search-api)
 
 - C# on .NET 8 (ASP.NET Core Web API) + ASP.NET Core, Entity Framework Core, MediatR, FluentValidation, Swagger/OpenAPI (001-report-context-api)
 
@@ -51,9 +53,9 @@ tests/
 C# on .NET 8 (ASP.NET Core Web API): Follow standard conventions
 
 ## Recent Changes
+- 001-local-semantic-search-api: Added C# / .NET 10 + ASP.NET Core 10, Microsoft.ML.OnnxRuntime, Microsoft.ML.Tokenizers, SQLite (Microsoft.Data.Sqlite), MediatR, FluentValidation
 - 029-editor-spell-check: Added C# / .NET 8 (backend), TypeScript / React 18 (frontend) + HugeRTE v1.0.9 + @hugerte/hugerte-react v2.0.2, nspell (Hunspell-compatible JS spell checker), MediatR, FluentValidation, Entity Framework Core 9, React Query, Zustand, Axios
 - 027-diagnosis-popup: Added C# on .NET 10 (ASP.NET Core Web API) + TypeScript 5.7 (React 18) + ASP.NET Core, MediatR 13, FluentValidation 11, AesEncryptionService (existing), React 18, React Query, Zustand, i18next, Tailwind CSS
-- 026-report-export-import: Added C# / .NET 8, TypeScript 5.x + ASP.NET Core, MediatR, FluentValidation, Entity Framework Core, PuppeteerSharp, HtmlAgilityPack, Mammoth, RtfPipe, React 18, Vite, Axios, Zustand, TanStack React Query, Tailwind CSS
 
 
 <!-- MANUAL ADDITIONS START -->
