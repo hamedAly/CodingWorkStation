@@ -1,0 +1,53 @@
+@if (IsOpen)
+{
+    <div class="quality-modal-backdrop" @onclick="CloseAsync">
+        <section class="quality-modal card" role="dialog" aria-modal="true" aria-label="Duplicate comparison" @onclick:stopPropagation="true">
+            <div class="section-head quality-modal-head">
+                <div>
+                    <h2>Duplicate comparison</h2>
+                    @if (Comparison is not null)
+                    {
+                        <p>Similarity: @Comparison.Finding.SimilarityScore.ToString("0.0000") | Type: @Comparison.Finding.Type | Severity: @Comparison.Finding.Severity</p>
+                    }
+                </div>
+                <button class="button button-secondary" @onclick="CloseAsync">Close</button>
+            </div>
+
+            @if (IsBusy)
+            {
+                <p class="empty-state">Loading comparison...</p>
+            }
+            else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                <p class="banner banner-error">@ErrorMessage</p>
+            }
+            else if (Comparison is not null)
+            {
+                <div class="quality-modal-grid">
+                    <CodeRegionPane Title="Left region" Region="@Comparison.Finding.LeftRegion" />
+                    <CodeRegionPane Title="Right region" Region="@Comparison.Finding.RightRegion" />
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    private Task CloseAsync() => OnClose.InvokeAsync();
+
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public bool IsBusy { get; set; }
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    [Parameter]
+    public DuplicateComparisonResponse? Comparison { get; set; }
+
+    [Parameter]
+    public EventCallback OnClose { get; set; }
+}
+

@@ -8,6 +8,7 @@ Local semantic search workspace for codebases. The application runs entirely off
 - Indexing panel for full project indexing and single-file refresh
 - Search workspace with semantic and exact search modes
 - Project explorer with indexed tree browsing and full-file reading
+- Quality dashboard for structural and semantic duplication analysis with side-by-side evidence review
 - Offline Web API for indexing, search, status, tree, and file-read flows
 - Absolute-path storage rooted in `IWebHostEnvironment.ContentRootPath` for IIS hosting stability
 
@@ -24,6 +25,7 @@ Local semantic search workspace for codebases. The application runs entirely off
 |---------|---------|---------|
 | `FluentValidation` | `12.1.1` | Application-layer validation |
 | `MediatR` | `14.1.0` | Command/query dispatch |
+| `Microsoft.CodeAnalysis.CSharp` | `4.11.0` | Roslyn-based structural clone detection |
 | `Microsoft.Data.Sqlite` | `9.0.3` | Local file-based persistence |
 | `Microsoft.ML.OnnxRuntime` | `1.20.1` | Offline embedding inference |
 | `Microsoft.ML.Tokenizers` | `0.22.0` | Tokenization for the ONNX model |
@@ -60,6 +62,7 @@ dotnet run --project src/SemanticSearch.WebApi --urls "http://localhost:5000"
 Open:
 
 - UI: `http://localhost:5000/`
+- Quality UI: `http://localhost:5000/quality`
 - API: `http://localhost:5000/api/...`
 
 ## Configuration
@@ -100,6 +103,11 @@ All configured paths are resolved relative to the application content root.
 - `POST /api/search/semantic`
 - `POST /api/search/exact`
 - `POST /api/file/read`
+- `GET /api/quality/{projectKey}`
+- `GET /api/quality/{projectKey}/findings`
+- `GET /api/quality/{projectKey}/findings/{findingId}`
+- `POST /api/quality/structural`
+- `POST /api/quality/semantic`
 
 ## API Examples
 
@@ -188,3 +196,26 @@ data/
 sample-projects/
 specs/
 ```
+
+## Quality Dashboard
+
+The quality dashboard lives at `/quality` and reuses the indexed project catalog. It supports:
+
+- structural duplication analysis for C# files using normalized Roslyn syntax fingerprints
+- semantic duplication analysis over persisted local embeddings
+- a dashboard hero with grade, total LOC, duplication percentage, and clone counts
+- a doughnut chart for unique, structural, and semantic line breakdown
+- a findings table with line ranges and a side-by-side comparison modal
+
+Quality API example:
+
+```powershell
+$structural = @{
+  projectKey = 'single-file-csharp'
+  minimumLines = 5
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/quality/structural -ContentType 'application/json' -Body $structural
+Invoke-RestMethod -Method Get -Uri http://localhost:5000/api/quality/single-file-csharp
+```
+

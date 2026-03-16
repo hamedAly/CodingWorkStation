@@ -1,0 +1,40 @@
+<section class="quality-region-card">
+    <div class="section-head quality-region-head">
+        <div>
+            <h3>@Title</h3>
+            <p class="mono">@Region.RelativeFilePath</p>
+        </div>
+        <span class="status-pill">@Region.Availability</span>
+    </div>
+
+    <p class="result-meta">Lines @Region.StartLine-@Region.EndLine</p>
+
+    <div class="quality-code-block" role="region" aria-label="@Title code snippet">
+        @foreach (var line in BuildLines())
+        {
+            <div class="quality-code-line @(line.Highlighted ? "highlighted" : string.Empty)">
+                <span class="quality-code-number">@line.LineNumber</span>
+                <code class="quality-code-text">@line.Content</code>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public CodeRegionViewResponse Region { get; set; } = default!;
+
+    private IEnumerable<(int LineNumber, string Content, bool Highlighted)> BuildLines()
+    {
+        var highlights = Region.HighlightedLineNumbers.ToHashSet();
+        var lines = Region.Snippet.Replace("\r", string.Empty).Split('\n');
+        for (var index = 0; index < lines.Length; index++)
+        {
+            var lineNumber = Region.StartLine + index;
+            yield return (lineNumber, lines[index], highlights.Contains(lineNumber));
+        }
+    }
+}

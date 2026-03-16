@@ -1,0 +1,374 @@
+@implements IDisposable
+@inject WorkspaceApiClient WorkspaceApiClient
+
+<section class="dashboard-stack quality-stack">
+    <section class="card stack dashboard-controls">
+        <div class="section-head">
+            <div>
+                <h2>Quality snapshot</h2>
+                <p>Select a project, choose the whole solution or a folder from the tree, then run the quality analysis you need.</p>
+            </div>
+            <div class="quality-actions">
+                <button class="button button-secondary" @onclick="RefreshSnapshotAsync" disabled="@(!_canAnalyze)">Run full snapshot</button>
+                <button class="button" @onclick="RunStructuralAsync" disabled="@(!_canAnalyze)">Run structural</button>
+                <button class="button" @onclick="RunSemanticAsync" disabled="@(!_canAnalyze)">Run semantic</button>
+            </div>
+        </div>
+
+        <div class="field-grid">
+            <div>
+                <label class="field-label" for="quality-project">Project key</label>
+                <select id="quality-project" class="field-input" value="@_selectedProjectKey" @onchange="HandleProjectChanged" disabled="@_isBusy">
+                    <option value="">Select a project</option>
+                    @foreach (var project in _projects)
+                    {
+                        <option value="@project.ProjectKey">@project.ProjectKey</option>
+                    }
+                </select>
+            </div>
+            <div class="quality-hint">
+                <p class="field-label">Run mode</p>
+                <p class="lede">Nothing runs automatically. Pick a project first, then choose the full solution, a project, a folder, or a file from the tree before running a snapshot.</p>
+                <p class="quality-scope-meta">Current scope: <span class="mono">@CurrentScopeLabel</span></p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <p class="banner banner-success">@_message</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <p class="banner banner-error">@_errorMessage</p>
+        }
+    </section>
+
+    @if (_projects.Count == 0 && !_isBusy)
+    {
+        <section class="card">
+            <p class="empty-state">No indexed projects are available yet. Start from the indexing page, then return here.</p>
+        </section>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_selectedProjectKey) || _scopeTreeNodes.Count > 0)
+    {
+        <QualityScopeTree
+            Nodes="@_scopeTreeNodes"
+            SelectedPath="@(_selectedScopePath ?? string.Empty)"
+            SolutionLabel="@_selectedProjectKey"
+            Disabled="@(!_canSelectScope)"
+            OnScopeSelected="@HandleScopeSelectedAsync" />
+    }
+
+    @if (_summary is not null)
+    {
+        <QualityHero Summary="@_summary" />
+
+        <section class="quality-content-grid">
+            <QualityBreakdownChart Summary="@_summary" />
+            <QualityFindingsTable Findings="@_findings" IsBusy="@_isBusy" OnOpenFinding="@OpenFindingAsync" />
+        </section>
+    }
+    else if (!_isBusy && _projects.Count > 0)
+    {
+        <section class="card">
+            <p class="empty-state">Select a project and optional scope, then run a full snapshot or a specific duplication check.</p>
+        </section>
+    }
+</section>
+
+<DuplicateComparisonModal
+    IsOpen="@_isModalOpen"
+    Comparison="@_comparison"
+    ErrorMessage="@_comparisonError"
+    IsBusy="@_isComparisonBusy"
+    OnClose="@CloseModal" />
+
+@code {
+    private readonly CancellationTokenSource _disposeTokenSource = new();
+    private IReadOnlyList<ProjectWorkspaceSummaryResponse> _projects = [];
+    private QualitySummaryResponse? _summary;
+    private IReadOnlyList<DuplicationFindingResponse> _findings = [];
+    private IReadOnlyList<ProjectTreeNodeResponse> _scopeTreeNodes = [];
+    private DuplicateComparisonResponse? _comparison;
+    private string? _selectedProjectKey;
+    private string? _selectedScopePath;
+    private string? _message;
+    private string? _errorMessage;
+    private string? _comparisonError;
+    private bool _isBusy;
+    private bool _isComparisonBusy;
+    private bool _isModalOpen;
+
+    private bool _canAnalyze => !_isBusy && !string.IsNullOrWhiteSpace(_selectedProjectKey);
+    private bool _canSelectScope => !_isBusy && !string.IsNullOrWhiteSpace(_selectedProjectKey);
+    private string CurrentScopeLabel => BuildScopeLabel(_selectedScopePath);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProjectsAsync();
+    }
+
+    private async Task LoadProjectsAsync()
+    {
+        _isBusy = true;
+        _errorMessage = null;
+
+        try
+        {
+            _projects = await WorkspaceApiClient.ListProjectsAsync(_disposeTokenSource.Token) ?? [];
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task HandleProjectChanged(ChangeEventArgs args)
+    {
+        _selectedProjectKey = args.Value?.ToString();
+        _selectedScopePath = string.Empty;
+        ResetDashboardState();
+
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            _scopeTreeNodes = [];
+            return;
+        }
+
+        await LoadScopeTreeAsync();
+    }
+
+    private Task HandleScopeSelectedAsync(string scopePath)
+    {
+        _selectedScopePath = scopePath;
+        ResetDashboardState();
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadScopeTreeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            _scopeTreeNodes = [];
+            return;
+        }
+
+        _isBusy = true;
+        _errorMessage = null;
+        _message = null;
+
+        try
+        {
+            var tree = await WorkspaceApiClient.GetTreeAsync(_selectedProjectKey, _disposeTokenSource.Token) ?? [];
+            _scopeTreeNodes = tree;
+            _selectedScopePath = string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _scopeTreeNodes = [];
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task RefreshSnapshotAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            return;
+        }
+
+        _isBusy = true;
+        _errorMessage = null;
+        _message = null;
+
+        try
+        {
+            var snapshot = await WorkspaceApiClient.GenerateQualitySnapshotAsync(
+                new QualitySnapshotRequest(_selectedProjectKey, NormalizeScopePath(_selectedScopePath)),
+                _disposeTokenSource.Token);
+            ApplySnapshot(snapshot);
+            _message = $"Snapshot refreshed for {CurrentScopeLabel}.";
+        }
+        catch (Exception ex)
+        {
+            ResetDashboardState();
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task LoadLatestSnapshotAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            return;
+        }
+
+        try
+        {
+            _summary = await WorkspaceApiClient.GetQualitySummaryAsync(_selectedProjectKey, _disposeTokenSource.Token);
+            var findings = await WorkspaceApiClient.GetQualityFindingsAsync(_selectedProjectKey, _disposeTokenSource.Token);
+            _findings = SortFindings(findings?.Findings ?? []);
+        }
+        catch (Exception ex)
+        {
+            ResetDashboardState();
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task RunStructuralAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            return;
+        }
+
+        _isBusy = true;
+        _errorMessage = null;
+        _message = null;
+
+        try
+        {
+            var result = await WorkspaceApiClient.RunStructuralAnalysisAsync(
+                new StructuralDuplicationRequest(_selectedProjectKey, NormalizeScopePath(_selectedScopePath), null),
+                _disposeTokenSource.Token);
+            _message = $"Structural analysis completed with {result.FindingCount} findings for {CurrentScopeLabel}.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+
+        await LoadLatestSnapshotAsync();
+    }
+
+    private async Task RunSemanticAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            return;
+        }
+
+        _isBusy = true;
+        _errorMessage = null;
+        _message = null;
+
+        try
+        {
+            var result = await WorkspaceApiClient.RunSemanticAnalysisAsync(
+                new SemanticDuplicationRequest(_selectedProjectKey, NormalizeScopePath(_selectedScopePath), null, null),
+                _disposeTokenSource.Token);
+            _message = $"Semantic analysis completed with {result.FindingCount} findings for {CurrentScopeLabel}.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+
+        await LoadLatestSnapshotAsync();
+    }
+
+    private async Task OpenFindingAsync(string findingId)
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            return;
+        }
+
+        _isModalOpen = true;
+        _isComparisonBusy = true;
+        _comparison = null;
+        _comparisonError = null;
+
+        try
+        {
+            _comparison = await WorkspaceApiClient.GetDuplicateComparisonAsync(_selectedProjectKey, findingId, _disposeTokenSource.Token);
+        }
+        catch (Exception ex)
+        {
+            _comparisonError = ex.Message;
+        }
+        finally
+        {
+            _isComparisonBusy = false;
+        }
+    }
+
+    private Task CloseModal()
+    {
+        _isModalOpen = false;
+        _comparison = null;
+        _comparisonError = null;
+        return Task.CompletedTask;
+    }
+
+    private void ApplySnapshot(QualitySnapshotResponse snapshot)
+    {
+        _summary = snapshot.Summary;
+        _findings = SortFindings(snapshot.Findings.Findings);
+    }
+
+    private void ResetDashboardState()
+    {
+        _summary = null;
+        _findings = [];
+        _message = null;
+        _errorMessage = null;
+        _comparison = null;
+        _comparisonError = null;
+        _isModalOpen = false;
+    }
+
+    private static string? NormalizeScopePath(string? scopePath)
+        => string.IsNullOrWhiteSpace(scopePath) ? null : scopePath;
+
+    private static IReadOnlyList<DuplicationFindingResponse> SortFindings(IReadOnlyList<DuplicationFindingResponse> findings)
+        => findings
+            .OrderByDescending(finding => SeverityRank(finding.Severity))
+            .ThenByDescending(finding => finding.SimilarityScore)
+            .ThenByDescending(finding => finding.MatchingLineCount)
+            .ThenBy(finding => finding.LeftFilePath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(finding => finding.RightFilePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private static int SeverityRank(string severity)
+        => severity switch
+        {
+            "High" => 3,
+            "Medium" => 2,
+            "Low" => 1,
+            _ => 0
+        };
+
+    private static string BuildScopeLabel(string? scopePath)
+        => string.IsNullOrWhiteSpace(scopePath)
+            ? "Entire solution"
+            : scopePath;
+
+    public void Dispose()
+    {
+        _disposeTokenSource.Cancel();
+        _disposeTokenSource.Dispose();
+    }
+}

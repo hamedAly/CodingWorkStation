@@ -9,7 +9,7 @@ using SemanticSearch.Infrastructure.Common;
 
 namespace SemanticSearch.Infrastructure.VectorStore;
 
-public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFileRepository
+public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFileRepository, IQualityRepository
 {
     private readonly string _connectionString;
 
@@ -378,6 +378,232 @@ public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFil
         return results;
     }
 
+    public async Task<QualitySummarySnapshot?> GetSummaryAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ProjectKey, RunId, QualityGrade, TotalLinesOfCode, UniqueLineCount, StructuralDuplicateLineCount,
+                   SemanticDuplicateLineCount, DuplicationPercent, StructuralFindingCount, SemanticFindingCount, LastAnalyzedUtc
+            FROM QualitySummarySnapshots
+            WHERE ProjectKey = @ProjectKey;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadSummary(reader) : null;
+    }
+
+    public async Task<IReadOnlyList<DuplicationFinding>> ListFindingsAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT FindingId, ProjectKey, RunId, Type, Severity, SimilarityScore, MatchingLineCount,
+                   NormalizedFingerprint, LeftRegionId, RightRegionId, CreatedUtc
+            FROM DuplicationFindings
+            WHERE ProjectKey = @ProjectKey
+            ORDER BY SimilarityScore DESC, MatchingLineCount DESC, CreatedUtc DESC;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        var results = new List<DuplicationFinding>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(ReadFinding(reader));
+
+        return results;
+    }
+
+    public async Task<DuplicationFinding?> GetFindingAsync(string projectKey, string findingId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT FindingId, ProjectKey, RunId, Type, Severity, SimilarityScore, MatchingLineCount,
+                   NormalizedFingerprint, LeftRegionId, RightRegionId, CreatedUtc
+            FROM DuplicationFindings
+            WHERE ProjectKey = @ProjectKey AND FindingId = @FindingId;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+        command.Parameters.AddWithValue("@FindingId", findingId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadFinding(reader) : null;
+    }
+
+    public async Task<CodeRegion?> GetRegionAsync(string projectKey, string regionId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RegionId, ProjectKey, RelativeFilePath, StartLine, EndLine, Snippet, ContentHash, SourceSegmentId, Availability
+            FROM CodeRegions
+            WHERE ProjectKey = @ProjectKey AND RegionId = @RegionId;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+        command.Parameters.AddWithValue("@RegionId", regionId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadRegion(reader) : null;
+    }
+
+    public async Task<QualityAnalysisRun?> GetLatestAnalysisRunAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RunId, ProjectKey, RequestedModes, Status, RequestedUtc, StartedUtc, CompletedUtc,
+                   TotalFilesScanned, TotalLinesAnalyzed, StructuralFindingCount, SemanticFindingCount, FailureReason
+            FROM QualityAnalysisRuns
+            WHERE ProjectKey = @ProjectKey
+            ORDER BY RequestedUtc DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadQualityRun(reader) : null;
+    }
+
+    public async Task ReplaceSnapshotAsync(
+        QualityAnalysisRun run,
+        QualitySummarySnapshot summary,
+        IReadOnlyList<DuplicationFinding> findings,
+        IReadOnlyList<CodeRegion> regions,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var insertRun = connection.CreateCommand())
+        {
+            insertRun.Transaction = (SqliteTransaction)transaction;
+            insertRun.CommandText = """
+                INSERT INTO QualityAnalysisRuns (
+                    RunId, ProjectKey, RequestedModes, Status, RequestedUtc, StartedUtc, CompletedUtc,
+                    TotalFilesScanned, TotalLinesAnalyzed, StructuralFindingCount, SemanticFindingCount, FailureReason
+                ) VALUES (
+                    @RunId, @ProjectKey, @RequestedModes, @Status, @RequestedUtc, @StartedUtc, @CompletedUtc,
+                    @TotalFilesScanned, @TotalLinesAnalyzed, @StructuralFindingCount, @SemanticFindingCount, @FailureReason
+                );
+                """;
+            insertRun.Parameters.AddWithValue("@RunId", run.RunId);
+            insertRun.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+            insertRun.Parameters.AddWithValue("@RequestedModes", run.RequestedModes);
+            insertRun.Parameters.AddWithValue("@Status", run.Status.ToString());
+            insertRun.Parameters.AddWithValue("@RequestedUtc", run.RequestedUtc.ToString("O"));
+            insertRun.Parameters.AddWithValue("@StartedUtc", ToDbValue(run.StartedUtc));
+            insertRun.Parameters.AddWithValue("@CompletedUtc", ToDbValue(run.CompletedUtc));
+            insertRun.Parameters.AddWithValue("@TotalFilesScanned", run.TotalFilesScanned);
+            insertRun.Parameters.AddWithValue("@TotalLinesAnalyzed", run.TotalLinesAnalyzed);
+            insertRun.Parameters.AddWithValue("@StructuralFindingCount", run.StructuralFindingCount);
+            insertRun.Parameters.AddWithValue("@SemanticFindingCount", run.SemanticFindingCount);
+            insertRun.Parameters.AddWithValue("@FailureReason", ToDbValue(run.FailureReason));
+            await insertRun.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var tableName in new[] { "DuplicationFindings", "CodeRegions" })
+        {
+            await using var deleteCommand = connection.CreateCommand();
+            deleteCommand.Transaction = (SqliteTransaction)transaction;
+            deleteCommand.CommandText = $"DELETE FROM {tableName} WHERE ProjectKey = @ProjectKey;";
+            deleteCommand.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var deleteSummary = connection.CreateCommand())
+        {
+            deleteSummary.Transaction = (SqliteTransaction)transaction;
+            deleteSummary.CommandText = "DELETE FROM QualitySummarySnapshots WHERE ProjectKey = @ProjectKey;";
+            deleteSummary.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+            await deleteSummary.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var region in regions)
+        {
+            await using var insertRegion = connection.CreateCommand();
+            insertRegion.Transaction = (SqliteTransaction)transaction;
+            insertRegion.CommandText = """
+                INSERT INTO CodeRegions (
+                    RegionId, ProjectKey, RelativeFilePath, StartLine, EndLine, Snippet, ContentHash, SourceSegmentId, Availability
+                ) VALUES (
+                    @RegionId, @ProjectKey, @RelativeFilePath, @StartLine, @EndLine, @Snippet, @ContentHash, @SourceSegmentId, @Availability
+                );
+                """;
+            insertRegion.Parameters.AddWithValue("@RegionId", region.RegionId);
+            insertRegion.Parameters.AddWithValue("@ProjectKey", region.ProjectKey);
+            insertRegion.Parameters.AddWithValue("@RelativeFilePath", region.RelativeFilePath);
+            insertRegion.Parameters.AddWithValue("@StartLine", region.StartLine);
+            insertRegion.Parameters.AddWithValue("@EndLine", region.EndLine);
+            insertRegion.Parameters.AddWithValue("@Snippet", region.Snippet);
+            insertRegion.Parameters.AddWithValue("@ContentHash", region.ContentHash);
+            insertRegion.Parameters.AddWithValue("@SourceSegmentId", ToDbValue(region.SourceSegmentId));
+            insertRegion.Parameters.AddWithValue("@Availability", region.Availability.ToString());
+            await insertRegion.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var finding in findings)
+        {
+            await using var insertFinding = connection.CreateCommand();
+            insertFinding.Transaction = (SqliteTransaction)transaction;
+            insertFinding.CommandText = """
+                INSERT INTO DuplicationFindings (
+                    FindingId, ProjectKey, RunId, Type, Severity, SimilarityScore, MatchingLineCount,
+                    NormalizedFingerprint, LeftRegionId, RightRegionId, CreatedUtc
+                ) VALUES (
+                    @FindingId, @ProjectKey, @RunId, @Type, @Severity, @SimilarityScore, @MatchingLineCount,
+                    @NormalizedFingerprint, @LeftRegionId, @RightRegionId, @CreatedUtc
+                );
+                """;
+            insertFinding.Parameters.AddWithValue("@FindingId", finding.FindingId);
+            insertFinding.Parameters.AddWithValue("@ProjectKey", finding.ProjectKey);
+            insertFinding.Parameters.AddWithValue("@RunId", finding.RunId);
+            insertFinding.Parameters.AddWithValue("@Type", finding.Type.ToString());
+            insertFinding.Parameters.AddWithValue("@Severity", finding.Severity.ToString());
+            insertFinding.Parameters.AddWithValue("@SimilarityScore", finding.SimilarityScore);
+            insertFinding.Parameters.AddWithValue("@MatchingLineCount", finding.MatchingLineCount);
+            insertFinding.Parameters.AddWithValue("@NormalizedFingerprint", ToDbValue(finding.NormalizedFingerprint));
+            insertFinding.Parameters.AddWithValue("@LeftRegionId", finding.LeftRegionId);
+            insertFinding.Parameters.AddWithValue("@RightRegionId", finding.RightRegionId);
+            insertFinding.Parameters.AddWithValue("@CreatedUtc", finding.CreatedUtc.ToString("O"));
+            await insertFinding.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var insertSummary = connection.CreateCommand())
+        {
+            insertSummary.Transaction = (SqliteTransaction)transaction;
+            insertSummary.CommandText = """
+                INSERT INTO QualitySummarySnapshots (
+                    ProjectKey, RunId, QualityGrade, TotalLinesOfCode, UniqueLineCount, StructuralDuplicateLineCount,
+                    SemanticDuplicateLineCount, DuplicationPercent, StructuralFindingCount, SemanticFindingCount, LastAnalyzedUtc
+                ) VALUES (
+                    @ProjectKey, @RunId, @QualityGrade, @TotalLinesOfCode, @UniqueLineCount, @StructuralDuplicateLineCount,
+                    @SemanticDuplicateLineCount, @DuplicationPercent, @StructuralFindingCount, @SemanticFindingCount, @LastAnalyzedUtc
+                );
+                """;
+            insertSummary.Parameters.AddWithValue("@ProjectKey", summary.ProjectKey);
+            insertSummary.Parameters.AddWithValue("@RunId", summary.RunId);
+            insertSummary.Parameters.AddWithValue("@QualityGrade", summary.QualityGrade.ToString());
+            insertSummary.Parameters.AddWithValue("@TotalLinesOfCode", summary.TotalLinesOfCode);
+            insertSummary.Parameters.AddWithValue("@UniqueLineCount", summary.UniqueLineCount);
+            insertSummary.Parameters.AddWithValue("@StructuralDuplicateLineCount", summary.StructuralDuplicateLineCount);
+            insertSummary.Parameters.AddWithValue("@SemanticDuplicateLineCount", summary.SemanticDuplicateLineCount);
+            insertSummary.Parameters.AddWithValue("@DuplicationPercent", summary.DuplicationPercent);
+            insertSummary.Parameters.AddWithValue("@StructuralFindingCount", summary.StructuralFindingCount);
+            insertSummary.Parameters.AddWithValue("@SemanticFindingCount", summary.SemanticFindingCount);
+            insertSummary.Parameters.AddWithValue("@LastAnalyzedUtc", summary.LastAnalyzedUtc.ToString("O"));
+            await insertSummary.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
     public static string ComputeSegmentId(string projectKey, string relativeFilePath, int startLine)
     {
         var raw = $"{projectKey}|{relativeFilePath}|{startLine}";
@@ -423,6 +649,64 @@ public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFil
         FailureReason = ParseNullableString(reader, 15)
     };
 
+    private static QualityAnalysisRun ReadQualityRun(SqliteDataReader reader) => new()
+    {
+        RunId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        RequestedModes = reader.GetString(2),
+        Status = Enum.Parse<QualityAnalysisStatus>(reader.GetString(3)),
+        RequestedUtc = DateTime.Parse(reader.GetString(4)),
+        StartedUtc = ParseNullableDateTime(reader, 5),
+        CompletedUtc = ParseNullableDateTime(reader, 6),
+        TotalFilesScanned = reader.GetInt32(7),
+        TotalLinesAnalyzed = reader.GetInt32(8),
+        StructuralFindingCount = reader.GetInt32(9),
+        SemanticFindingCount = reader.GetInt32(10),
+        FailureReason = ParseNullableString(reader, 11)
+    };
+
+    private static QualitySummarySnapshot ReadSummary(SqliteDataReader reader) => new()
+    {
+        ProjectKey = reader.GetString(0),
+        RunId = reader.GetString(1),
+        QualityGrade = Enum.Parse<QualityGrade>(reader.GetString(2)),
+        TotalLinesOfCode = reader.GetInt32(3),
+        UniqueLineCount = reader.GetInt32(4),
+        StructuralDuplicateLineCount = reader.GetInt32(5),
+        SemanticDuplicateLineCount = reader.GetInt32(6),
+        DuplicationPercent = reader.GetDouble(7),
+        StructuralFindingCount = reader.GetInt32(8),
+        SemanticFindingCount = reader.GetInt32(9),
+        LastAnalyzedUtc = DateTime.Parse(reader.GetString(10))
+    };
+
+    private static DuplicationFinding ReadFinding(SqliteDataReader reader) => new()
+    {
+        FindingId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        RunId = reader.GetString(2),
+        Type = Enum.Parse<DuplicationType>(reader.GetString(3)),
+        Severity = Enum.Parse<DuplicationSeverity>(reader.GetString(4)),
+        SimilarityScore = reader.GetDouble(5),
+        MatchingLineCount = reader.GetInt32(6),
+        NormalizedFingerprint = ParseNullableString(reader, 7),
+        LeftRegionId = reader.GetString(8),
+        RightRegionId = reader.GetString(9),
+        CreatedUtc = DateTime.Parse(reader.GetString(10))
+    };
+
+    private static CodeRegion ReadRegion(SqliteDataReader reader) => new()
+    {
+        RegionId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        RelativeFilePath = reader.GetString(2),
+        StartLine = reader.GetInt32(3),
+        EndLine = reader.GetInt32(4),
+        Snippet = reader.GetString(5),
+        ContentHash = reader.GetString(6),
+        SourceSegmentId = ParseNullableString(reader, 7),
+        Availability = Enum.Parse<CodeRegionAvailability>(reader.GetString(8))
+    };
     private static async Task EnsureColumnAsync(
         SqliteConnection connection,
         string tableName,
@@ -533,3 +817,7 @@ public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFil
         await deleteFile.ExecuteNonQueryAsync(cancellationToken);
     }
 }
+
+
+
+

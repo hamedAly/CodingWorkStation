@@ -1,0 +1,86 @@
+<section class="card quality-table-card">
+    <div class="section-head">
+        <div>
+            <h2>Duplicate findings</h2>
+            <p>Severity, type, files, and line ranges for the latest persisted snapshot.</p>
+        </div>
+        <span class="status-pill">@Findings.Count finding(s)</span>
+    </div>
+
+    @if (IsBusy)
+    {
+        <p class="empty-state">Loading findings...</p>
+    }
+    else if (Findings.Count == 0)
+    {
+        <p class="empty-state">No duplicate findings met the current thresholds for this project.</p>
+    }
+    else
+    {
+        <div class="quality-table-wrap">
+            <table class="quality-table">
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Type</th>
+                        <th>Files</th>
+                        <th>Lines</th>
+                        <th>Score</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var finding in SortedFindings)
+                    {
+                        <tr>
+                            <td><span class="status-pill quality-severity-@finding.Severity.ToLowerInvariant()">@finding.Severity</span></td>
+                            <td>@finding.Type</td>
+                            <td>
+                                <div class="quality-file-pair">
+                                    <span class="mono">@finding.LeftFilePath</span>
+                                    <span class="mono">@finding.RightFilePath</span>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="quality-file-pair">
+                                    <span>@finding.LeftStartLine-@finding.LeftEndLine</span>
+                                    <span>@finding.RightStartLine-@finding.RightEndLine</span>
+                                </div>
+                            </td>
+                            <td>@finding.SimilarityScore.ToString("0.0000")</td>
+                            <td>
+                                <button class="button button-secondary" @onclick="() => OnOpenFinding.InvokeAsync(finding.FindingId)">Compare</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<DuplicationFindingResponse> SortedFindings
+        => Findings
+            .OrderByDescending(finding => finding.Severity switch
+            {
+                "High" => 3,
+                "Medium" => 2,
+                "Low" => 1,
+                _ => 0
+            })
+            .ThenByDescending(finding => finding.SimilarityScore)
+            .ThenByDescending(finding => finding.MatchingLineCount)
+            .ThenBy(finding => finding.LeftFilePath, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(finding => finding.RightFilePath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    [Parameter]
+    public IReadOnlyList<DuplicationFindingResponse> Findings { get; set; } = [];
+
+    [Parameter]
+    public bool IsBusy { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnOpenFinding { get; set; }
+}

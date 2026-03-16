@@ -67,5 +67,64 @@ public static class SqliteSchemaInitializer
         );
         CREATE INDEX IF NOT EXISTS IX_SearchSegments_ProjectKey ON SearchSegments(ProjectKey);
         CREATE INDEX IF NOT EXISTS IX_SearchSegments_ProjectKey_FilePath ON SearchSegments(ProjectKey, RelativeFilePath);
+
+        CREATE TABLE IF NOT EXISTS QualityAnalysisRuns (
+            RunId TEXT PRIMARY KEY,
+            ProjectKey TEXT NOT NULL,
+            RequestedModes TEXT NOT NULL,
+            Status TEXT NOT NULL,
+            RequestedUtc TEXT NOT NULL,
+            StartedUtc TEXT NULL,
+            CompletedUtc TEXT NULL,
+            TotalFilesScanned INTEGER NOT NULL DEFAULT 0,
+            TotalLinesAnalyzed INTEGER NOT NULL DEFAULT 0,
+            StructuralFindingCount INTEGER NOT NULL DEFAULT 0,
+            SemanticFindingCount INTEGER NOT NULL DEFAULT 0,
+            FailureReason TEXT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_QualityAnalysisRuns_ProjectKey ON QualityAnalysisRuns(ProjectKey);
+
+        CREATE TABLE IF NOT EXISTS QualitySummarySnapshots (
+            ProjectKey TEXT PRIMARY KEY,
+            RunId TEXT NOT NULL,
+            QualityGrade TEXT NOT NULL,
+            TotalLinesOfCode INTEGER NOT NULL DEFAULT 0,
+            UniqueLineCount INTEGER NOT NULL DEFAULT 0,
+            StructuralDuplicateLineCount INTEGER NOT NULL DEFAULT 0,
+            SemanticDuplicateLineCount INTEGER NOT NULL DEFAULT 0,
+            DuplicationPercent REAL NOT NULL DEFAULT 0,
+            StructuralFindingCount INTEGER NOT NULL DEFAULT 0,
+            SemanticFindingCount INTEGER NOT NULL DEFAULT 0,
+            LastAnalyzedUtc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS CodeRegions (
+            RegionId TEXT PRIMARY KEY,
+            ProjectKey TEXT NOT NULL,
+            RelativeFilePath TEXT NOT NULL,
+            StartLine INTEGER NOT NULL,
+            EndLine INTEGER NOT NULL,
+            Snippet TEXT NOT NULL,
+            ContentHash TEXT NOT NULL,
+            SourceSegmentId TEXT NULL,
+            Availability TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_CodeRegions_ProjectKey ON CodeRegions(ProjectKey);
+
+        CREATE TABLE IF NOT EXISTS DuplicationFindings (
+            FindingId TEXT PRIMARY KEY,
+            ProjectKey TEXT NOT NULL,
+            RunId TEXT NOT NULL,
+            Type TEXT NOT NULL,
+            Severity TEXT NOT NULL,
+            SimilarityScore REAL NOT NULL,
+            MatchingLineCount INTEGER NOT NULL,
+            NormalizedFingerprint TEXT NULL,
+            LeftRegionId TEXT NOT NULL,
+            RightRegionId TEXT NOT NULL,
+            CreatedUtc TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_DuplicationFindings_ProjectKey ON DuplicationFindings(ProjectKey);
+        CREATE INDEX IF NOT EXISTS IX_DuplicationFindings_ProjectKey_RunId ON DuplicationFindings(ProjectKey, RunId);
         """;
 }

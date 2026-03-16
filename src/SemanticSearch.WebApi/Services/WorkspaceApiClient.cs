@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using SemanticSearch.WebApi.Contracts.Files;
 using SemanticSearch.WebApi.Contracts.Projects;
+using SemanticSearch.WebApi.Contracts.Quality;
 using SemanticSearch.WebApi.Contracts.Search;
 
 namespace SemanticSearch.WebApi.Services;
@@ -51,6 +52,24 @@ public sealed class WorkspaceApiClient
 
     public Task<ReadFileResponse> ReadFileAsync(ReadFileRequest request, CancellationToken cancellationToken = default)
         => PostAsync<ReadFileRequest, ReadFileResponse>("api/file/read", request, cancellationToken);
+
+    public Task<QualitySnapshotResponse> GenerateQualitySnapshotAsync(QualitySnapshotRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<QualitySnapshotRequest, QualitySnapshotResponse>("api/quality/snapshot", request, cancellationToken);
+
+    public Task<QualitySummaryResponse?> GetQualitySummaryAsync(string projectKey, CancellationToken cancellationToken = default)
+        => GetAsync<QualitySummaryResponse>($"api/quality/{Uri.EscapeDataString(projectKey)}", cancellationToken);
+
+    public Task<QualityFindingsResponse?> GetQualityFindingsAsync(string projectKey, CancellationToken cancellationToken = default)
+        => GetAsync<QualityFindingsResponse>($"api/quality/{Uri.EscapeDataString(projectKey)}/findings", cancellationToken);
+
+    public Task<DuplicateComparisonResponse?> GetDuplicateComparisonAsync(string projectKey, string findingId, CancellationToken cancellationToken = default)
+        => GetAsync<DuplicateComparisonResponse>($"api/quality/{Uri.EscapeDataString(projectKey)}/findings/{Uri.EscapeDataString(findingId)}", cancellationToken);
+
+    public Task<QualityRunResponse> RunStructuralAnalysisAsync(StructuralDuplicationRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<StructuralDuplicationRequest, QualityRunResponse>("api/quality/structural", request, cancellationToken);
+
+    public Task<QualityRunResponse> RunSemanticAnalysisAsync(SemanticDuplicationRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<SemanticDuplicationRequest, QualityRunResponse>("api/quality/semantic", request, cancellationToken);
 
     private async Task<TResponse?> GetAsync<TResponse>(string url, CancellationToken cancellationToken)
     {

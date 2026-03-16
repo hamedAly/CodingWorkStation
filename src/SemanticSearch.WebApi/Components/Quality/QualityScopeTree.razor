@@ -1,0 +1,85 @@
+<section class="card stack quality-scope-card">
+    <div class="section-head">
+        <div>
+            <h2>Solution scope</h2>
+            <p>Select the full solution, a project, a folder, or a file from the solution tree.</p>
+        </div>
+    </div>
+
+    @if (Nodes.Count == 0)
+    {
+        <p class="empty-state">Select a project to load the solution tree.</p>
+    }
+    else
+    {
+        <div class="quality-scope-root">
+            <div class="quality-scope-row">
+                <button
+                    type="button"
+                    class="quality-scope-toggle"
+                    @onclick="ToggleRoot"
+                    disabled="@Disabled">
+                    @(_isRootExpanded ? "▾" : "▸")
+                </button>
+                <input
+                    class="quality-scope-check"
+                    type="checkbox"
+                    checked="@IsSolutionSelected"
+                    @onchange="HandleSolutionChanged"
+                    disabled="@Disabled" />
+                <span class="quality-scope-label">Solution</span>
+                @if (!string.IsNullOrWhiteSpace(SolutionLabel))
+                {
+                    <span class="quality-scope-badge">@SolutionLabel</span>
+                }
+            </div>
+
+            @if (_isRootExpanded)
+            {
+                <div class="tree-children">
+                    @foreach (var node in Nodes)
+                    {
+                        <QualityScopeTreeNode
+                            Node="@node"
+                            SelectedPath="@SelectedPath"
+                            Disabled="@Disabled"
+                            Depth="0"
+                            OnScopeSelected="@OnScopeSelected" />
+                    }
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private bool _isRootExpanded = true;
+
+    [Parameter]
+    public IReadOnlyList<ProjectTreeNodeResponse> Nodes { get; set; } = [];
+
+    [Parameter]
+    public string? SelectedPath { get; set; }
+
+    [Parameter]
+    public string? SolutionLabel { get; set; }
+
+    [Parameter]
+    public bool Disabled { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnScopeSelected { get; set; }
+
+    private bool IsSolutionSelected => string.IsNullOrWhiteSpace(SelectedPath);
+
+    private void ToggleRoot()
+    {
+        _isRootExpanded = !_isRootExpanded;
+    }
+
+    private Task HandleSolutionChanged(ChangeEventArgs args)
+    {
+        var isChecked = args.Value as bool? ?? false;
+        return OnScopeSelected.InvokeAsync(isChecked ? string.Empty : string.Empty);
+    }
+}

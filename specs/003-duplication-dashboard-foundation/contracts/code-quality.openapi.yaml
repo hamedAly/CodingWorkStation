@@ -1,0 +1,375 @@
+openapi: 3.0.3
+info:
+  title: Code Quality Dashboard API
+  version: 1.0.0
+  description: Offline API contract for structural duplication, semantic duplication, and dashboard-ready quality summaries.
+servers:
+  - url: http://localhost:5000
+tags:
+  - name: Quality
+paths:
+  /api/quality/structural:
+    post:
+      tags: [Quality]
+      summary: Run structural duplication analysis for one indexed project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StructuralDuplicationRequest'
+      responses:
+        '200':
+          description: Structural duplication analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicationRunResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Project key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/quality/semantic:
+    post:
+      tags: [Quality]
+      summary: Run semantic duplication analysis for one indexed project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticDuplicationRequest'
+      responses:
+        '200':
+          description: Semantic duplication analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicationRunResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Project key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/quality/{projectKey}:
+    get:
+      tags: [Quality]
+      summary: Get the latest quality summary snapshot for one project
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+      responses:
+        '200':
+          description: Latest quality summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualitySummaryResponse'
+        '404':
+          description: No quality summary is available for the project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/quality/{projectKey}/findings:
+    get:
+      tags: [Quality]
+      summary: List duplicate findings for the latest quality snapshot
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+      responses:
+        '200':
+          description: Duplicate findings for the project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QualityFindingsResponse'
+        '404':
+          description: No quality findings are available for the project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/quality/{projectKey}/findings/{findingId}:
+    get:
+      tags: [Quality]
+      summary: Get the comparison payload for one duplicate finding
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+        - $ref: '#/components/parameters/FindingId'
+      responses:
+        '200':
+          description: Duplicate comparison detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DuplicateComparisonResponse'
+        '404':
+          description: Finding not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  parameters:
+    ProjectKey:
+      name: projectKey
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+    FindingId:
+      name: findingId
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetails'
+  schemas:
+    StructuralDuplicationRequest:
+      type: object
+      required: [projectKey]
+      properties:
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        minimumLines:
+          type: integer
+          minimum: 1
+          default: 5
+    SemanticDuplicationRequest:
+      type: object
+      required: [projectKey]
+      properties:
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        similarityThreshold:
+          type: number
+          format: float
+          minimum: 0.95
+          maximum: 1.0
+          default: 0.95
+        maxPairs:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 200
+    DuplicationRunResponse:
+      type: object
+      required: [projectKey, runId, mode, analyzedAtUtc, totalLinesOfCode, findingCount, findings]
+      properties:
+        projectKey:
+          type: string
+        runId:
+          type: string
+        mode:
+          type: string
+          enum: [Structural, Semantic]
+        analyzedAtUtc:
+          type: string
+          format: date-time
+        totalLinesOfCode:
+          type: integer
+          minimum: 0
+        findingCount:
+          type: integer
+          minimum: 0
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/DuplicationFindingResponse'
+    QualitySummaryResponse:
+      type: object
+      required: [projectKey, runId, qualityGrade, totalLinesOfCode, duplicationPercent, structuralFindingCount, semanticFindingCount, breakdown]
+      properties:
+        projectKey:
+          type: string
+        runId:
+          type: string
+        qualityGrade:
+          type: string
+          enum: [A, B, C, D, E]
+        totalLinesOfCode:
+          type: integer
+          minimum: 0
+        duplicationPercent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+        structuralFindingCount:
+          type: integer
+          minimum: 0
+        semanticFindingCount:
+          type: integer
+          minimum: 0
+        breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/QualityBreakdownSlice'
+        lastAnalyzedUtc:
+          type: string
+          format: date-time
+          nullable: true
+    QualityFindingsResponse:
+      type: object
+      required: [projectKey, runId, findings]
+      properties:
+        projectKey:
+          type: string
+        runId:
+          type: string
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/DuplicationFindingResponse'
+    DuplicationFindingResponse:
+      type: object
+      required:
+        [findingId, severity, type, similarityScore, matchingLineCount, leftFilePath, leftStartLine, leftEndLine, rightFilePath, rightStartLine, rightEndLine]
+      properties:
+        findingId:
+          type: string
+        severity:
+          type: string
+          enum: [High, Medium, Low]
+        type:
+          type: string
+          enum: [Structural, Semantic]
+        similarityScore:
+          type: number
+          format: float
+          minimum: 0.95
+          maximum: 1.0
+        matchingLineCount:
+          type: integer
+          minimum: 1
+        leftFilePath:
+          type: string
+        leftStartLine:
+          type: integer
+          minimum: 1
+        leftEndLine:
+          type: integer
+          minimum: 1
+        rightFilePath:
+          type: string
+        rightStartLine:
+          type: integer
+          minimum: 1
+        rightEndLine:
+          type: integer
+          minimum: 1
+    DuplicateComparisonResponse:
+      type: object
+      required: [projectKey, finding]
+      properties:
+        projectKey:
+          type: string
+        finding:
+          $ref: '#/components/schemas/DuplicateComparisonView'
+    DuplicateComparisonView:
+      type: object
+      required: [findingId, severity, type, similarityScore, leftRegion, rightRegion]
+      properties:
+        findingId:
+          type: string
+        severity:
+          type: string
+          enum: [High, Medium, Low]
+        type:
+          type: string
+          enum: [Structural, Semantic]
+        similarityScore:
+          type: number
+          format: float
+        leftRegion:
+          $ref: '#/components/schemas/CodeRegionView'
+        rightRegion:
+          $ref: '#/components/schemas/CodeRegionView'
+    CodeRegionView:
+      type: object
+      required: [relativeFilePath, startLine, endLine, snippet, highlightedLineNumbers, availability]
+      properties:
+        relativeFilePath:
+          type: string
+        startLine:
+          type: integer
+          minimum: 1
+        endLine:
+          type: integer
+          minimum: 1
+        snippet:
+          type: string
+        highlightedLineNumbers:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+        availability:
+          type: string
+          enum: [Available, Missing, Stale]
+    QualityBreakdownSlice:
+      type: object
+      required: [category, lineCount, percent]
+      properties:
+        category:
+          type: string
+          enum: [Unique, Structural, Semantic]
+        lineCount:
+          type: integer
+          minimum: 0
+        percent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+        errorId:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string

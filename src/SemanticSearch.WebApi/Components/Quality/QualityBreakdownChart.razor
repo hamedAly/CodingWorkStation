@@ -1,0 +1,26 @@
+@inject IJSRuntime JS
+
+<section class="card quality-chart-card">
+    <div class="section-head">
+        <div>
+            <h2>Unique vs duplicate code</h2>
+            <p>Doughnut breakdown of unique, structural, and semantic lines from the latest snapshot.</p>
+        </div>
+    </div>
+
+    <div class="quality-chart-shell">
+        <canvas id="@_canvasId" class="quality-chart-canvas" width="320" height="320"></canvas>
+    </div>
+</section>
+
+@code {
+    private readonly string _canvasId = $"quality-breakdown-{Guid.NewGuid():N}";
+
+    [Parameter, EditorRequired]
+    public QualitySummaryResponse Summary { get; set; } = default!;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        await JS.InvokeVoidAsync("qualityDashboard.renderBreakdownChart", _canvasId, Summary.Breakdown);
+    }
+}

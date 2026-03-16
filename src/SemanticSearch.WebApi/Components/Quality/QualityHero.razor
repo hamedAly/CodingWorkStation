@@ -1,0 +1,38 @@
+@if (Summary is not null)
+{
+    <section class="quality-hero-grid">
+        <article class="card quality-grade-card">
+            <p class="eyebrow">Quality grade</p>
+            <div class="quality-grade-value grade-@Summary.QualityGrade.ToLowerInvariant()">@Summary.QualityGrade</div>
+            <p class="lede">Latest snapshot: @FormatDate(Summary.LastAnalyzedUtc)</p>
+        </article>
+
+        <article class="card quality-metric-card">
+            <p class="eyebrow">Total LOC</p>
+            <strong>@Summary.TotalLinesOfCode.ToString("N0")</strong>
+        </article>
+
+        <article class="card quality-metric-card">
+            <p class="eyebrow">Duplication</p>
+            <strong>@Summary.DuplicationPercent.ToString("0.##")%</strong>
+        </article>
+
+        <article class="card quality-metric-card">
+            <p class="eyebrow">Structural clones</p>
+            <strong>@Summary.StructuralFindingCount.ToString("N0")</strong>
+        </article>
+
+        <article class="card quality-metric-card">
+            <p class="eyebrow">Semantic clones</p>
+            <strong>@Summary.SemanticFindingCount.ToString("N0")</strong>
+        </article>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public QualitySummaryResponse Summary { get; set; } = default!;
+
+    private static string FormatDate(DateTime? value)
+        => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "Not analyzed yet";
+}

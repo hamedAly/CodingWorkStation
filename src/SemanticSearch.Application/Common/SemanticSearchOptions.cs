@@ -9,6 +9,7 @@ public sealed class SemanticSearchOptions
     public ChunkingOptions Chunking { get; set; } = new();
     public IndexingOptions Indexing { get; set; } = new();
     public UiOptions Ui { get; set; } = new();
+    public QualityOptions Quality { get; set; } = new();
 }
 
 public sealed class ChunkingOptions
@@ -40,4 +41,12 @@ public sealed class UiOptions
     public int DashboardPollSeconds { get; set; } = 5;
     public int DefaultSemanticTopK { get; set; } = 5;
     public int DefaultExactTopK { get; set; } = 50;
+}
+
+public sealed class QualityOptions
+{
+    public int MinimumStructuralLines { get; set; } = 5;
+    public double SemanticSimilarityThreshold { get; set; } = 0.9;
+    public int MaxSemanticPairs { get; set; } = 500;
+    public int MaxFindingsPerType { get; set; } = 100;
 }
