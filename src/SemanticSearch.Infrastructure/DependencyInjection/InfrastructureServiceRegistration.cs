@@ -6,6 +6,8 @@ using SemanticSearch.Domain.Interfaces;
 using SemanticSearch.Infrastructure.Embedding;
 using SemanticSearch.Infrastructure.FileSystem;
 using SemanticSearch.Infrastructure.Indexing;
+using SemanticSearch.Infrastructure.ProjectTree;
+using SemanticSearch.Infrastructure.Search;
 using SemanticSearch.Infrastructure.VectorStore;
 
 namespace SemanticSearch.Infrastructure.DependencyInjection;
@@ -20,18 +22,20 @@ public static class InfrastructureServiceRegistration
         var modelDirectory = Path.Combine(env.ContentRootPath, options.ModelPath);
         var databasePath = Path.Combine(env.ContentRootPath, options.DatabasePath);
 
-        services.AddSingleton<IEmbeddingService>(
-            new OnnxEmbeddingService(modelDirectory));
+        services.AddSingleton<IEmbeddingService>(new OnnxEmbeddingService(modelDirectory));
 
-        var vectorStore = new SqliteVectorStore(databasePath);
-        services.AddSingleton<IVectorStore>(vectorStore);
-
+        services.AddSingleton<ProjectCatalogService>();
+        services.AddSingleton<SqliteVectorStore>(_ => new SqliteVectorStore(databasePath));
+        services.AddSingleton<IProjectWorkspaceRepository>(sp => sp.GetRequiredService<SqliteVectorStore>());
+        services.AddSingleton<IProjectFileRepository>(sp => sp.GetRequiredService<SqliteVectorStore>());
         services.AddSingleton<IFileChunker, FileChunker>();
         services.AddSingleton<IProjectScanner, ProjectScanner>();
+        services.AddSingleton<IProjectTreeService, ProjectTreeBuilder>();
+        services.AddSingleton<IProjectFileReader, ProjectFileReader>();
+        services.AddSingleton<IExactSearchService, ExactSearchService>();
 
-        // Indexing background infrastructure
         var indexingChannel = new IndexingChannel();
-        services.AddSingleton<IndexingChannel>(indexingChannel);
+        services.AddSingleton(indexingChannel);
         services.AddSingleton<IIndexingQueue>(indexingChannel);
         services.AddHostedService<IndexingWorker>();
 

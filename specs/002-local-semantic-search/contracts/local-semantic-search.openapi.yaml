@@ -1,0 +1,409 @@
+openapi: 3.0.3
+info:
+  title: Local Semantic Search Workspace API
+  version: 1.0.0
+  description: Offline API contract for indexing, searching, browsing, and reading local codebases.
+servers:
+  - url: http://localhost:5000
+tags:
+  - name: Projects
+  - name: Search
+  - name: Files
+paths:
+  /api/project:
+    get:
+      tags: [Projects]
+      summary: List known project workspaces for the dashboard
+      responses:
+        '200':
+          description: Project workspace summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectStatusResponse'
+  /api/project/index:
+    post:
+      tags: [Projects]
+      summary: Start a full indexing run for a project workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexProjectRequest'
+      responses:
+        '202':
+          description: Indexing request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Another indexing run is already active for the same project key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/project/index/file:
+    post:
+      tags: [Projects]
+      summary: Refresh one indexed file inside an existing project workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexFileRequest'
+      responses:
+        '202':
+          description: Single-file refresh accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexAcceptedResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: Another indexing run is already active for the same project key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexAcceptedResponse'
+        '404':
+          description: Project key or file path not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/project/status/{projectKey}:
+    get:
+      tags: [Projects]
+      summary: Get indexing status for a project workspace
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+      responses:
+        '200':
+          description: Current project status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectStatusResponse'
+        '404':
+          description: Project key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/project/tree/{projectKey}:
+    get:
+      tags: [Projects]
+      summary: Return the indexed directory tree for a project workspace
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+      responses:
+        '200':
+          description: Directory tree for the requested project
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectTreeResponse'
+        '404':
+          description: Project key not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/search/semantic:
+    post:
+      tags: [Search]
+      summary: Run a semantic search within one project workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticSearchRequest'
+      responses:
+        '200':
+          description: Ranked semantic search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /api/search/exact:
+    post:
+      tags: [Search]
+      summary: Run an exact keyword search within one project workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExactSearchRequest'
+      responses:
+        '200':
+          description: Exact search matches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /api/file/read:
+    post:
+      tags: [Files]
+      summary: Read the full contents of one indexed file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileReadRequest'
+      responses:
+        '200':
+          description: Full file content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileReadResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: File not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  parameters:
+    ProjectKey:
+      name: projectKey
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 64
+  responses:
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetails'
+  schemas:
+    IndexProjectRequest:
+      type: object
+      required: [projectPath, projectKey]
+      properties:
+        projectPath:
+          type: string
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+    IndexFileRequest:
+      type: object
+      required: [projectKey, relativeFilePath]
+      properties:
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        relativeFilePath:
+          type: string
+    IndexAcceptedResponse:
+      type: object
+      required: [projectKey, runId, status, message]
+      properties:
+        projectKey:
+          type: string
+        runId:
+          type: string
+        status:
+          type: string
+          enum: [Queued, Running]
+        message:
+          type: string
+    SemanticSearchRequest:
+      type: object
+      required: [query, projectKey]
+      properties:
+        query:
+          type: string
+          minLength: 1
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        topK:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 5
+    ExactSearchRequest:
+      type: object
+      required: [keyword, projectKey]
+      properties:
+        keyword:
+          type: string
+          minLength: 1
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        matchCase:
+          type: boolean
+          default: false
+        topK:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 50
+    SearchResponse:
+      type: object
+      required: [projectKey, mode, results]
+      properties:
+        projectKey:
+          type: string
+        mode:
+          type: string
+          enum: [Semantic, Exact]
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+    SearchResult:
+      type: object
+      required: [relativeFilePath, score, snippet, startLine, endLine, matchType]
+      properties:
+        relativeFilePath:
+          type: string
+        score:
+          type: number
+          format: float
+        snippet:
+          type: string
+        startLine:
+          type: integer
+          minimum: 1
+        endLine:
+          type: integer
+          minimum: 1
+        matchType:
+          type: string
+          enum: [Semantic, Exact]
+    ProjectStatusResponse:
+      type: object
+      required: [projectKey, status, totalFiles, totalSegments, indexingInProgress]
+      properties:
+        projectKey:
+          type: string
+        status:
+          type: string
+          enum: [NotIndexed, Queued, Indexing, Indexed, Failed, Degraded]
+        totalFiles:
+          type: integer
+          minimum: 0
+        totalSegments:
+          type: integer
+          minimum: 0
+        indexingInProgress:
+          type: boolean
+        lastIndexedUtc:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+    ProjectTreeResponse:
+      type: object
+      required: [projectKey, nodes]
+      properties:
+        projectKey:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectTreeNode'
+    ProjectTreeNode:
+      type: object
+      required: [path, name, nodeType]
+      properties:
+        path:
+          type: string
+        name:
+          type: string
+        nodeType:
+          type: string
+          enum: [Directory, File]
+        relativeFilePath:
+          type: string
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectTreeNode'
+    FileReadRequest:
+      type: object
+      required: [projectKey, relativeFilePath]
+      properties:
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        relativeFilePath:
+          type: string
+    FileReadResponse:
+      type: object
+      required: [projectKey, relativeFilePath, content]
+      properties:
+        projectKey:
+          type: string
+        relativeFilePath:
+          type: string
+        content:
+          type: string
+        lastModifiedUtc:
+          type: string
+          format: date-time
+          nullable: true
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+        errorId:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string

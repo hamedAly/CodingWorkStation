@@ -1,0 +1,38 @@
+<section class="card stack">
+    <div class="section-head">
+        <div>
+            <h2>Results</h2>
+            <p>Readable snippets, ranked within the selected project.</p>
+        </div>
+    </div>
+
+    @if (Response is null)
+    {
+        <p class="empty-state">Run a search to see results.</p>
+    }
+    else if (Response.Results.Count == 0)
+    {
+        <p class="empty-state">No results were found for the selected project and query.</p>
+    }
+    else
+    {
+        <div class="result-list">
+            @foreach (var result in Response.Results)
+            {
+                <article class="result-card">
+                    <div class="result-head">
+                        <strong>@result.RelativeFilePath</strong>
+                        <span class="status-pill">@result.MatchType • @result.Score.ToString("0.000")</span>
+                    </div>
+                    <p class="result-meta">Lines @result.StartLine-@result.EndLine</p>
+                    <pre class="snippet-block"><code>@result.Snippet</code></pre>
+                </article>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public SearchResponse? Response { get; set; }
+}

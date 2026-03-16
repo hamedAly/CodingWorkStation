@@ -1,5 +1,6 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
+using SemanticSearch.Application.Common.Exceptions;
 
 namespace SemanticSearch.WebApi.Middleware;
 
@@ -20,6 +21,16 @@ public sealed class ExceptionHandlingMiddleware
         {
             await _next(context);
         }
+        catch (NotFoundException ex)
+        {
+            _logger.LogInformation(ex, "Resource not found for request {Path}", context.Request.Path);
+            await WriteProblemAsync(context, StatusCodes.Status404NotFound, ex.Message);
+        }
+        catch (ConflictException ex)
+        {
+            _logger.LogInformation(ex, "Conflict for request {Path}", context.Request.Path);
+            await WriteProblemAsync(context, StatusCodes.Status409Conflict, ex.Message);
+        }
         catch (ValidationException ex)
         {
             _logger.LogInformation(ex, "Validation failed for request {Path}", context.Request.Path);
@@ -34,6 +45,7 @@ public sealed class ExceptionHandlingMiddleware
 
     private static async Task WriteValidationProblemAsync(HttpContext context, ValidationException ex)
     {
+        var errorId = Guid.NewGuid().ToString("N");
         var errors = ex.Errors
             .GroupBy(e => e.PropertyName)
             .ToDictionary(
@@ -44,25 +56,35 @@ public sealed class ExceptionHandlingMiddleware
         {
             Status = StatusCodes.Status400BadRequest,
             Title = "One or more validation errors occurred.",
+            Detail = $"Reference errorId '{errorId}'.",
             Instance = context.Request.Path
         };
+        problem.Extensions["errorId"] = errorId;
 
         context.Response.StatusCode = StatusCodes.Status400BadRequest;
         context.Response.ContentType = "application/problem+json";
         await context.Response.WriteAsJsonAsync(problem);
     }
 
-    private static async Task WriteProblemAsync(HttpContext context)
+    private static async Task WriteProblemAsync(HttpContext context, int statusCode, string detail)
     {
+        var errorId = Guid.NewGuid().ToString("N");
         var problem = new ProblemDetails
         {
-            Status = StatusCodes.Status500InternalServerError,
-            Title = "An unexpected error occurred.",
+            Status = statusCode,
+            Title = statusCode == StatusCodes.Status500InternalServerError
+                ? "An unexpected error occurred."
+                : "The request could not be completed.",
+            Detail = $"{detail} (errorId: {errorId})",
             Instance = context.Request.Path
         };
+        problem.Extensions["errorId"] = errorId;
 
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.StatusCode = statusCode;
         context.Response.ContentType = "application/problem+json";
         await context.Response.WriteAsJsonAsync(problem);
     }
+
+    private static Task WriteProblemAsync(HttpContext context)
+        => WriteProblemAsync(context, StatusCodes.Status500InternalServerError, "An unexpected error occurred.");
 }

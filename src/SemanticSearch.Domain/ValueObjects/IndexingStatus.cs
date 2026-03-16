@@ -1,7 +1,17 @@
 namespace SemanticSearch.Domain.ValueObjects;
 
 public sealed record IndexingStatus(
-    bool IsIndexed,
+    string ProjectKey,
+    ProjectStatus Status,
     int TotalFiles,
-    int TotalChunks,
-    DateTime? LastUpdated);
+    int TotalSegments,
+    bool IndexingInProgress,
+    bool CanPause,
+    bool CanResume,
+    string? RunId,
+    int FilesProcessed,
+    int TotalFilesPlanned,
+    double ProgressPercent,
+    string? CurrentFilePath,
+    DateTime? LastIndexedUtc,
+    string? LastError);

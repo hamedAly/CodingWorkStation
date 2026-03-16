@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SemanticSearch.Domain.Interfaces;
 using SemanticSearch.Domain.ValueObjects;
+using SemanticSearch.Infrastructure.Common;
 
 namespace SemanticSearch.Infrastructure.FileSystem;
 
@@ -13,46 +14,42 @@ public sealed class FileChunker : IFileChunker
         _logger = logger;
     }
 
-    public IReadOnlyList<ChunkInfo> ChunkFile(string filePath, int chunkSize, int overlap)
+    public FileChunkingResult ChunkFile(string filePath, int chunkSize, int overlap)
     {
         if (!File.Exists(filePath))
         {
             _logger.LogWarning("Cannot chunk file that does not exist: {FilePath}", filePath);
-            return Array.Empty<ChunkInfo>();
+            return FileChunkingResult.Skip("The file does not exist.", shouldWarn: true);
         }
 
-        string content;
-        try
+        if (!TextFileLoader.TryReadSanitizedText(filePath, out var content, out var isBinary, out var failureReason))
         {
-            content = File.ReadAllText(filePath);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to read file {FilePath}", filePath);
-            return Array.Empty<ChunkInfo>();
+            if (isBinary)
+            {
+                _logger.LogDebug("Skipping non-text file during indexing: {FilePath}", filePath);
+                return FileChunkingResult.Skip(failureReason);
+            }
+
+            _logger.LogWarning("Failed to read file {FilePath}: {FailureReason}", filePath, failureReason);
+            return FileChunkingResult.Skip(failureReason, shouldWarn: true);
         }
 
         if (string.IsNullOrWhiteSpace(content))
-            return Array.Empty<ChunkInfo>();
+            return FileChunkingResult.Skip("The file is empty or whitespace.");
 
-        // Binary file detection: check first 8KB for null bytes
-        if (IsBinaryContent(content))
-        {
-            _logger.LogDebug("Skipping binary file: {FilePath}", filePath);
-            return Array.Empty<ChunkInfo>();
-        }
-
-        var lines = content.Split('\n');
+        var lines = content.Replace("\r\n", "\n").Split('\n');
         if (lines.Length == 0)
-            return Array.Empty<ChunkInfo>();
+            return FileChunkingResult.Skip("The file has no readable lines.");
 
         var chunks = new List<ChunkInfo>();
         var stride = chunkSize - overlap;
+        if (stride <= 0)
+            stride = chunkSize;
 
         if (lines.Length <= chunkSize)
         {
-            chunks.Add(new ChunkInfo(filePath, content, 1, lines.Length));
-            return chunks;
+            chunks.Add(new ChunkInfo(filePath, string.Join('\n', lines), 1, lines.Length));
+            return FileChunkingResult.Success(chunks);
         }
 
         for (int startIndex = 0; startIndex < lines.Length; startIndex += stride)
@@ -74,17 +71,6 @@ public sealed class FileChunker : IFileChunker
                 break;
         }
 
-        return chunks;
-    }
-
-    private static bool IsBinaryContent(string content)
-    {
-        var checkLength = Math.Min(content.Length, 8192);
-        for (int i = 0; i < checkLength; i++)
-        {
-            if (content[i] == '\0')
-                return true;
-        }
-        return false;
+        return FileChunkingResult.Success(chunks);
     }
 }

@@ -1,0 +1,211 @@
+@implements IAsyncDisposable
+@inject IOptions<SemanticSearchOptions> Options
+@inject WorkspaceApiClient WorkspaceApiClient
+
+<section class="dashboard-stack">
+    <section class="card stack dashboard-controls">
+        <div class="section-head">
+            <div>
+                <h2>Active workspaces</h2>
+                <p>Refreshes automatically while this page is open.</p>
+            </div>
+            <button class="button button-secondary" @onclick="LoadProjectsAsync" disabled="@_isBusy">Refresh now</button>
+        </div>
+
+        <div class="refresh-grid">
+            <div>
+                <label class="field-label" for="refresh-project">Project key</label>
+                <select id="refresh-project" class="field-input" @bind="_refreshProjectKey">
+                    <option value="">Select a project</option>
+                    @foreach (var project in _projects)
+                    {
+                        <option value="@project.ProjectKey">@project.ProjectKey</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label class="field-label" for="refresh-path">Relative file path</label>
+                <input id="refresh-path" class="field-input" @bind="_refreshFilePath" placeholder="src/Example/File.cs" />
+            </div>
+            <div class="field-actions">
+                <button class="button" @onclick="RefreshFileAsync" disabled="@_isBusy">Refresh one file</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <p class="banner banner-success">@_message</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(_errorMessage))
+        {
+            <p class="banner banner-error">@_errorMessage</p>
+        }
+    </section>
+
+    @if (_projects.Count == 0 && !_isBusy)
+    {
+        <section class="card">
+            <p class="empty-state">No indexed projects yet. Start from the indexing page.</p>
+        </section>
+    }
+    else
+    {
+        <section class="status-grid">
+            @foreach (var project in _projects)
+            {
+                <ProjectStatusCard
+                    Project="@project"
+                    OnPauseRequested="PauseProjectAsync"
+                    OnResumeRequested="ResumeProjectAsync"
+                    OnRetryRequested="RetryProjectAsync" />
+            }
+        </section>
+    }
+</section>
+
+@code {
+    private readonly CancellationTokenSource _disposeTokenSource = new();
+    private IReadOnlyList<ProjectWorkspaceSummaryResponse> _projects = [];
+    private string? _refreshProjectKey;
+    private string? _refreshFilePath;
+    private string? _message;
+    private string? _errorMessage;
+    private bool _isBusy;
+    private PeriodicTimer? _timer;
+    private Task? _pollingTask;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProjectsAsync();
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(Math.Max(1, Options.Value.Ui.DashboardPollSeconds)));
+        _pollingTask = PollAsync(_disposeTokenSource.Token);
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        if (_timer is null)
+            return;
+
+        while (await _timer.WaitForNextTickAsync(cancellationToken))
+        {
+            await InvokeAsync(async () =>
+            {
+                if (!_isBusy)
+                    await LoadProjectsAsync();
+            });
+        }
+    }
+
+    private async Task LoadProjectsAsync()
+    {
+        _isBusy = true;
+        _errorMessage = null;
+
+        try
+        {
+            _projects = await WorkspaceApiClient.ListProjectsAsync() ?? [];
+            _refreshProjectKey ??= _projects.FirstOrDefault()?.ProjectKey;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task PauseProjectAsync(string projectKey)
+    {
+        _message = null;
+        _errorMessage = null;
+
+        try
+        {
+            var response = await WorkspaceApiClient.PauseIndexingAsync(projectKey);
+            _message = response.Message;
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task ResumeProjectAsync(string projectKey)
+    {
+        _message = null;
+        _errorMessage = null;
+
+        try
+        {
+            var response = await WorkspaceApiClient.ResumeIndexingAsync(projectKey);
+            _message = response.Message;
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task RetryProjectAsync(string projectKey)
+    {
+        _message = null;
+        _errorMessage = null;
+
+        try
+        {
+            var response = await WorkspaceApiClient.RetryIndexingAsync(projectKey);
+            _message = response.Message;
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task RefreshFileAsync()
+    {
+        _message = null;
+        _errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(_refreshProjectKey) || string.IsNullOrWhiteSpace(_refreshFilePath))
+        {
+            _errorMessage = "Select a project key and provide a relative file path.";
+            return;
+        }
+
+        try
+        {
+            var response = await WorkspaceApiClient.RefreshFileAsync(new RefreshProjectFileRequest(_refreshProjectKey, _refreshFilePath));
+            _message = response.Message;
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposeTokenSource.Cancel();
+        _timer?.Dispose();
+
+        if (_pollingTask is not null)
+        {
+            try
+            {
+                await _pollingTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        _disposeTokenSource.Dispose();
+    }
+}

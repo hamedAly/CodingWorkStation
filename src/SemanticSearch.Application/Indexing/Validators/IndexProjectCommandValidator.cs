@@ -9,10 +9,11 @@ public sealed class IndexProjectCommandValidator : AbstractValidator<IndexProjec
     {
         RuleFor(x => x.ProjectKey)
             .NotEmpty().WithMessage("ProjectKey is required.")
-            .MaximumLength(128).WithMessage("ProjectKey must not exceed 128 characters.");
+            .MaximumLength(64).WithMessage("ProjectKey must not exceed 64 characters.");
 
         RuleFor(x => x.ProjectPath)
             .NotEmpty().WithMessage("ProjectPath is required.")
+            .Must(Path.IsPathRooted).WithMessage("ProjectPath must be an absolute path.")
             .Must(Directory.Exists).WithMessage("ProjectPath must be an existing directory.");
     }
 }

@@ -5,6 +5,7 @@ out/
 
 # Visual Studio
 .vs/
+.idea/
 *.user
 *.suo
 *.userosscache
@@ -47,3 +48,4 @@ Desktop.ini
 *.temp
 *.swp
 *~
+publish/

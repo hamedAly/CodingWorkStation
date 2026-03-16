@@ -2,12 +2,14 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Data.Sqlite;
+using SemanticSearch.Application.Common.Interfaces;
 using SemanticSearch.Domain.Entities;
-using SemanticSearch.Domain.Interfaces;
+using SemanticSearch.Domain.ValueObjects;
+using SemanticSearch.Infrastructure.Common;
 
 namespace SemanticSearch.Infrastructure.VectorStore;
 
-public sealed class SqliteVectorStore : IVectorStore
+public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFileRepository
 {
     private readonly string _connectionString;
 
@@ -26,203 +28,508 @@ public sealed class SqliteVectorStore : IVectorStore
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(cancellationToken);
-
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            CREATE TABLE IF NOT EXISTS Chunks (
-                Id TEXT PRIMARY KEY,
-                ProjectKey TEXT NOT NULL,
-                FilePath TEXT NOT NULL,
-                StartLine INTEGER NOT NULL,
-                EndLine INTEGER NOT NULL,
-                Content TEXT NOT NULL,
-                Embedding BLOB NOT NULL,
-                CreatedAt TEXT NOT NULL,
-                UNIQUE(ProjectKey, FilePath, StartLine)
-            );
-            CREATE INDEX IF NOT EXISTS IX_Chunks_ProjectKey ON Chunks(ProjectKey);
-            CREATE INDEX IF NOT EXISTS IX_Chunks_ProjectKey_FilePath ON Chunks(ProjectKey, FilePath);
-
-            CREATE TABLE IF NOT EXISTS ProjectMetadata (
-                ProjectKey TEXT PRIMARY KEY,
-                TotalFiles INTEGER NOT NULL DEFAULT 0,
-                TotalChunks INTEGER NOT NULL DEFAULT 0,
-                LastUpdated TEXT NOT NULL
-            );
-        ";
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = SqliteSchemaInitializer.Schema;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        await EnsureColumnAsync(connection, "IndexingRuns", "TotalFilesPlanned", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnAsync(connection, "IndexingRuns", "CurrentFilePath", "TEXT NULL", cancellationToken);
     }
 
-    public async Task UpsertChunksAsync(IReadOnlyList<Chunk> chunks, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ProjectWorkspace>> ListAsync(CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(cancellationToken);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ProjectKey, SourceRootPath, Status, TotalFiles, TotalSegments, LastIndexedUtc, LastRunId, LastError
+            FROM ProjectWorkspaces
+            ORDER BY COALESCE(LastIndexedUtc, '') DESC, ProjectKey;
+            """;
 
-        await using var tx = await conn.BeginTransactionAsync(cancellationToken);
-        await using var cmd = conn.CreateCommand();
-        cmd.Transaction = (SqliteTransaction)tx;
-        cmd.CommandText = @"
-            INSERT INTO Chunks (Id, ProjectKey, FilePath, StartLine, EndLine, Content, Embedding, CreatedAt)
-            VALUES (@Id, @ProjectKey, @FilePath, @StartLine, @EndLine, @Content, @Embedding, @CreatedAt)
-            ON CONFLICT(Id) DO UPDATE SET
-                EndLine = excluded.EndLine,
-                Content = excluded.Content,
-                Embedding = excluded.Embedding,
-                CreatedAt = excluded.CreatedAt;
-        ";
-
-        foreach (var chunk in chunks)
-        {
-            cmd.Parameters.Clear();
-            cmd.Parameters.AddWithValue("@Id", chunk.Id);
-            cmd.Parameters.AddWithValue("@ProjectKey", chunk.ProjectKey);
-            cmd.Parameters.AddWithValue("@FilePath", chunk.FilePath);
-            cmd.Parameters.AddWithValue("@StartLine", chunk.StartLine);
-            cmd.Parameters.AddWithValue("@EndLine", chunk.EndLine);
-            cmd.Parameters.AddWithValue("@Content", chunk.Content);
-            cmd.Parameters.AddWithValue("@Embedding", EmbeddingToBytes(chunk.Embedding));
-            cmd.Parameters.AddWithValue("@CreatedAt", chunk.CreatedAt.ToString("O"));
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await tx.CommitAsync(cancellationToken);
-    }
-
-    public async Task<IReadOnlyList<Chunk>> GetChunksByProjectAsync(string projectKey, CancellationToken cancellationToken = default)
-    {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(cancellationToken);
-
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            SELECT Id, ProjectKey, FilePath, StartLine, EndLine, Content, Embedding, CreatedAt
-            FROM Chunks WHERE ProjectKey = @ProjectKey";
-        cmd.Parameters.AddWithValue("@ProjectKey", projectKey);
-
-        var chunks = new List<Chunk>();
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        var results = new List<ProjectWorkspace>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
-        {
-            var embeddingBlob = (byte[])reader["Embedding"];
-            chunks.Add(new Chunk
-            {
-                Id = reader.GetString(0),
-                ProjectKey = reader.GetString(1),
-                FilePath = reader.GetString(2),
-                StartLine = reader.GetInt32(3),
-                EndLine = reader.GetInt32(4),
-                Content = reader.GetString(5),
-                Embedding = BytesToEmbedding(embeddingBlob),
-                CreatedAt = DateTime.Parse(reader.GetString(7))
-            });
-        }
-        return chunks;
+            results.Add(ReadWorkspace(reader));
+
+        return results;
     }
 
-    public async Task UpsertProjectMetadataAsync(ProjectMetadata metadata, CancellationToken cancellationToken = default)
+    public async Task<ProjectWorkspace?> GetAsync(string projectKey, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(cancellationToken);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ProjectKey, SourceRootPath, Status, TotalFiles, TotalSegments, LastIndexedUtc, LastRunId, LastError
+            FROM ProjectWorkspaces
+            WHERE ProjectKey = @ProjectKey;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
 
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            INSERT INTO ProjectMetadata (ProjectKey, TotalFiles, TotalChunks, LastUpdated)
-            VALUES (@ProjectKey, @TotalFiles, @TotalChunks, @LastUpdated)
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadWorkspace(reader) : null;
+    }
+
+    public async Task UpsertAsync(ProjectWorkspace workspace, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO ProjectWorkspaces (
+                ProjectKey, SourceRootPath, Status, TotalFiles, TotalSegments, LastIndexedUtc, LastRunId, LastError
+            )
+            VALUES (
+                @ProjectKey, @SourceRootPath, @Status, @TotalFiles, @TotalSegments, @LastIndexedUtc, @LastRunId, @LastError
+            )
             ON CONFLICT(ProjectKey) DO UPDATE SET
+                SourceRootPath = excluded.SourceRootPath,
+                Status = excluded.Status,
                 TotalFiles = excluded.TotalFiles,
-                TotalChunks = excluded.TotalChunks,
-                LastUpdated = excluded.LastUpdated;
-        ";
-        cmd.Parameters.AddWithValue("@ProjectKey", metadata.ProjectKey);
-        cmd.Parameters.AddWithValue("@TotalFiles", metadata.TotalFiles);
-        cmd.Parameters.AddWithValue("@TotalChunks", metadata.TotalChunks);
-        cmd.Parameters.AddWithValue("@LastUpdated", metadata.LastUpdated.ToString("O"));
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+                TotalSegments = excluded.TotalSegments,
+                LastIndexedUtc = excluded.LastIndexedUtc,
+                LastRunId = excluded.LastRunId,
+                LastError = excluded.LastError;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", workspace.ProjectKey);
+        command.Parameters.AddWithValue("@SourceRootPath", workspace.SourceRootPath);
+        command.Parameters.AddWithValue("@Status", workspace.Status.ToString());
+        command.Parameters.AddWithValue("@TotalFiles", workspace.TotalFiles);
+        command.Parameters.AddWithValue("@TotalSegments", workspace.TotalSegments);
+        command.Parameters.AddWithValue("@LastIndexedUtc", ToDbValue(workspace.LastIndexedUtc));
+        command.Parameters.AddWithValue("@LastRunId", ToDbValue(workspace.LastRunId));
+        command.Parameters.AddWithValue("@LastError", ToDbValue(workspace.LastError));
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<ProjectMetadata?> GetProjectMetadataAsync(string projectKey, CancellationToken cancellationToken = default)
+    public async Task<IndexingRun?> GetRunAsync(string runId, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(cancellationToken);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RunId, ProjectKey, RunType, Status, RequestedUtc, StartedUtc, CompletedUtc, RequestedFilePath,
+                   TotalFilesPlanned, FilesScanned, FilesIndexed, FilesSkipped, SegmentsWritten, WarningCount, CurrentFilePath, FailureReason
+            FROM IndexingRuns
+            WHERE RunId = @RunId;
+            """;
+        command.Parameters.AddWithValue("@RunId", runId);
 
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            SELECT ProjectKey, TotalFiles, TotalChunks, LastUpdated
-            FROM ProjectMetadata WHERE ProjectKey = @ProjectKey";
-        cmd.Parameters.AddWithValue("@ProjectKey", projectKey);
-
-        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
-            return null;
-
-        return new ProjectMetadata
-        {
-            ProjectKey = reader.GetString(0),
-            TotalFiles = reader.GetInt32(1),
-            TotalChunks = reader.GetInt32(2),
-            LastUpdated = DateTime.Parse(reader.GetString(3))
-        };
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadRun(reader) : null;
     }
 
-    public async Task DeleteStaleChunksAsync(
+    public async Task<IndexingRun?> GetActiveRunAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RunId, ProjectKey, RunType, Status, RequestedUtc, StartedUtc, CompletedUtc, RequestedFilePath,
+                   TotalFilesPlanned, FilesScanned, FilesIndexed, FilesSkipped, SegmentsWritten, WarningCount, CurrentFilePath, FailureReason
+            FROM IndexingRuns
+            WHERE ProjectKey = @ProjectKey AND Status IN ('Queued', 'Running', 'Paused')
+            ORDER BY RequestedUtc DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadRun(reader) : null;
+    }
+
+    public async Task UpsertRunAsync(IndexingRun run, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO IndexingRuns (
+                RunId, ProjectKey, RunType, Status, RequestedUtc, StartedUtc, CompletedUtc, RequestedFilePath,
+                TotalFilesPlanned, FilesScanned, FilesIndexed, FilesSkipped, SegmentsWritten, WarningCount, CurrentFilePath, FailureReason
+            )
+            VALUES (
+                @RunId, @ProjectKey, @RunType, @Status, @RequestedUtc, @StartedUtc, @CompletedUtc, @RequestedFilePath,
+                @TotalFilesPlanned, @FilesScanned, @FilesIndexed, @FilesSkipped, @SegmentsWritten, @WarningCount, @CurrentFilePath, @FailureReason
+            )
+            ON CONFLICT(RunId) DO UPDATE SET
+                Status = excluded.Status,
+                StartedUtc = excluded.StartedUtc,
+                CompletedUtc = excluded.CompletedUtc,
+                RequestedFilePath = excluded.RequestedFilePath,
+                TotalFilesPlanned = excluded.TotalFilesPlanned,
+                FilesScanned = excluded.FilesScanned,
+                FilesIndexed = excluded.FilesIndexed,
+                FilesSkipped = excluded.FilesSkipped,
+                SegmentsWritten = excluded.SegmentsWritten,
+                WarningCount = excluded.WarningCount,
+                CurrentFilePath = excluded.CurrentFilePath,
+                FailureReason = excluded.FailureReason;
+            """;
+        command.Parameters.AddWithValue("@RunId", run.RunId);
+        command.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+        command.Parameters.AddWithValue("@RunType", run.RunType.ToString());
+        command.Parameters.AddWithValue("@Status", run.Status.ToString());
+        command.Parameters.AddWithValue("@RequestedUtc", run.RequestedUtc.ToString("O"));
+        command.Parameters.AddWithValue("@StartedUtc", ToDbValue(run.StartedUtc));
+        command.Parameters.AddWithValue("@CompletedUtc", ToDbValue(run.CompletedUtc));
+        command.Parameters.AddWithValue("@RequestedFilePath", ToDbValue(run.RequestedFilePath));
+        command.Parameters.AddWithValue("@TotalFilesPlanned", run.TotalFilesPlanned);
+        command.Parameters.AddWithValue("@FilesScanned", run.FilesScanned);
+        command.Parameters.AddWithValue("@FilesIndexed", run.FilesIndexed);
+        command.Parameters.AddWithValue("@FilesSkipped", run.FilesSkipped);
+        command.Parameters.AddWithValue("@SegmentsWritten", run.SegmentsWritten);
+        command.Parameters.AddWithValue("@WarningCount", run.WarningCount);
+        command.Parameters.AddWithValue("@CurrentFilePath", ToDbValue(run.CurrentFilePath));
+        command.Parameters.AddWithValue("@FailureReason", ToDbValue(run.FailureReason));
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<IndexedFile>> ListFilesAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ProjectKey, RelativeFilePath, AbsoluteFilePath, FileName, Extension, Checksum, SizeBytes,
+                   LastModifiedUtc, LastIndexedUtc, SegmentCount, Availability
+            FROM IndexedFiles
+            WHERE ProjectKey = @ProjectKey
+            ORDER BY RelativeFilePath;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        var results = new List<IndexedFile>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(ReadFile(reader));
+
+        return results;
+    }
+
+    public async Task<IndexedFile?> GetFileAsync(
         string projectKey,
-        string filePath,
-        IReadOnlySet<string> keepChunkIds,
+        string relativeFilePath,
         CancellationToken cancellationToken = default)
     {
-        if (keepChunkIds.Count == 0)
-        {
-            await DeleteAllFileChunksAsync(projectKey, filePath, cancellationToken);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ProjectKey, RelativeFilePath, AbsoluteFilePath, FileName, Extension, Checksum, SizeBytes,
+                   LastModifiedUtc, LastIndexedUtc, SegmentCount, Availability
+            FROM IndexedFiles
+            WHERE ProjectKey = @ProjectKey AND RelativeFilePath = @RelativeFilePath;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+        command.Parameters.AddWithValue("@RelativeFilePath", relativeFilePath);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadFile(reader) : null;
+    }
+
+    public async Task UpsertFileAsync(IndexedFile indexedFile, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO IndexedFiles (
+                ProjectKey, RelativeFilePath, AbsoluteFilePath, FileName, Extension, Checksum, SizeBytes,
+                LastModifiedUtc, LastIndexedUtc, SegmentCount, Availability
+            )
+            VALUES (
+                @ProjectKey, @RelativeFilePath, @AbsoluteFilePath, @FileName, @Extension, @Checksum, @SizeBytes,
+                @LastModifiedUtc, @LastIndexedUtc, @SegmentCount, @Availability
+            )
+            ON CONFLICT(ProjectKey, RelativeFilePath) DO UPDATE SET
+                AbsoluteFilePath = excluded.AbsoluteFilePath,
+                FileName = excluded.FileName,
+                Extension = excluded.Extension,
+                Checksum = excluded.Checksum,
+                SizeBytes = excluded.SizeBytes,
+                LastModifiedUtc = excluded.LastModifiedUtc,
+                LastIndexedUtc = excluded.LastIndexedUtc,
+                SegmentCount = excluded.SegmentCount,
+                Availability = excluded.Availability;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", indexedFile.ProjectKey);
+        command.Parameters.AddWithValue("@RelativeFilePath", indexedFile.RelativeFilePath);
+        command.Parameters.AddWithValue("@AbsoluteFilePath", indexedFile.AbsoluteFilePath);
+        command.Parameters.AddWithValue("@FileName", indexedFile.FileName);
+        command.Parameters.AddWithValue("@Extension", indexedFile.Extension);
+        command.Parameters.AddWithValue("@Checksum", indexedFile.Checksum);
+        command.Parameters.AddWithValue("@SizeBytes", indexedFile.SizeBytes);
+        command.Parameters.AddWithValue("@LastModifiedUtc", indexedFile.LastModifiedUtc.ToString("O"));
+        command.Parameters.AddWithValue("@LastIndexedUtc", indexedFile.LastIndexedUtc.ToString("O"));
+        command.Parameters.AddWithValue("@SegmentCount", indexedFile.SegmentCount);
+        command.Parameters.AddWithValue("@Availability", indexedFile.Availability.ToString());
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task DeleteFileAsync(string projectKey, string relativeFilePath, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await DeleteFileContentAsync(connection, (SqliteTransaction)transaction, projectKey, relativeFilePath, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task DeleteFilesMissingFromSetAsync(
+        string projectKey,
+        IReadOnlySet<string> keepRelativePaths,
+        CancellationToken cancellationToken = default)
+    {
+        var files = await ListFilesAsync(projectKey, cancellationToken);
+        var toDelete = files
+            .Where(file => !keepRelativePaths.Contains(file.RelativeFilePath))
+            .Select(file => file.RelativeFilePath)
+            .ToList();
+
+        if (toDelete.Count == 0)
             return;
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        foreach (var relativeFilePath in toDelete)
+            await DeleteFileContentAsync(connection, (SqliteTransaction)transaction, projectKey, relativeFilePath, cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    public async Task ReplaceSegmentsAsync(
+        string projectKey,
+        string relativeFilePath,
+        IReadOnlyList<SearchSegment> segments,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        await using (var deleteCommand = connection.CreateCommand())
+        {
+            deleteCommand.Transaction = (SqliteTransaction)transaction;
+            deleteCommand.CommandText = """
+                DELETE FROM SearchSegments
+                WHERE ProjectKey = @ProjectKey AND RelativeFilePath = @RelativeFilePath;
+                """;
+            deleteCommand.Parameters.AddWithValue("@ProjectKey", projectKey);
+            deleteCommand.Parameters.AddWithValue("@RelativeFilePath", relativeFilePath);
+            await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(cancellationToken);
+        foreach (var segment in segments)
+        {
+            await using var insertCommand = connection.CreateCommand();
+            insertCommand.Transaction = (SqliteTransaction)transaction;
+            insertCommand.CommandText = """
+                INSERT INTO SearchSegments (
+                    SegmentId, ProjectKey, RelativeFilePath, SegmentOrder, StartLine, EndLine, Content, SnippetPreview,
+                    ContentHash, EmbeddingVector, TokenCount, CreatedUtc
+                )
+                VALUES (
+                    @SegmentId, @ProjectKey, @RelativeFilePath, @SegmentOrder, @StartLine, @EndLine, @Content, @SnippetPreview,
+                    @ContentHash, @EmbeddingVector, @TokenCount, @CreatedUtc
+                );
+                """;
+            insertCommand.Parameters.AddWithValue("@SegmentId", segment.SegmentId);
+            insertCommand.Parameters.AddWithValue("@ProjectKey", segment.ProjectKey);
+            insertCommand.Parameters.AddWithValue("@RelativeFilePath", segment.RelativeFilePath);
+            insertCommand.Parameters.AddWithValue("@SegmentOrder", segment.SegmentOrder);
+            insertCommand.Parameters.AddWithValue("@StartLine", segment.StartLine);
+            insertCommand.Parameters.AddWithValue("@EndLine", segment.EndLine);
+            insertCommand.Parameters.AddWithValue("@Content", segment.Content);
+            insertCommand.Parameters.AddWithValue("@SnippetPreview", segment.SnippetPreview);
+            insertCommand.Parameters.AddWithValue("@ContentHash", segment.ContentHash);
+            insertCommand.Parameters.AddWithValue("@EmbeddingVector", EmbeddingToBytes(segment.EmbeddingVector));
+            insertCommand.Parameters.AddWithValue("@TokenCount", segment.TokenCount);
+            insertCommand.Parameters.AddWithValue("@CreatedUtc", segment.CreatedUtc.ToString("O"));
+            await insertCommand.ExecuteNonQueryAsync(cancellationToken);
+        }
 
-        await using var cmd = conn.CreateCommand();
-        var placeholders = string.Join(",", keepChunkIds.Select((_, i) => $"@id{i}"));
-        cmd.CommandText = $@"
-            DELETE FROM Chunks
-            WHERE ProjectKey = @ProjectKey AND FilePath = @FilePath
-            AND Id NOT IN ({placeholders});";
-        cmd.Parameters.AddWithValue("@ProjectKey", projectKey);
-        cmd.Parameters.AddWithValue("@FilePath", filePath);
-        int idx = 0;
-        foreach (var id in keepChunkIds)
-            cmd.Parameters.AddWithValue($"@id{idx++}", id);
-
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
-    private async Task DeleteAllFileChunksAsync(string projectKey, string filePath, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SearchSegment>> ListSegmentsAsync(string projectKey, CancellationToken cancellationToken = default)
     {
-        await using var conn = new SqliteConnection(_connectionString);
-        await conn.OpenAsync(cancellationToken);
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = "DELETE FROM Chunks WHERE ProjectKey = @ProjectKey AND FilePath = @FilePath";
-        cmd.Parameters.AddWithValue("@ProjectKey", projectKey);
-        cmd.Parameters.AddWithValue("@FilePath", filePath);
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT SegmentId, ProjectKey, RelativeFilePath, SegmentOrder, StartLine, EndLine, Content, SnippetPreview,
+                   ContentHash, EmbeddingVector, TokenCount, CreatedUtc
+            FROM SearchSegments
+            WHERE ProjectKey = @ProjectKey
+            ORDER BY RelativeFilePath, SegmentOrder;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        var results = new List<SearchSegment>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(ReadSegment(reader));
+
+        return results;
     }
 
-    public static string ComputeChunkId(string projectKey, string filePath, int startLine)
+    public static string ComputeSegmentId(string projectKey, string relativeFilePath, int startLine)
     {
-        var raw = $"{projectKey}|{filePath}|{startLine}";
+        var raw = $"{projectKey}|{relativeFilePath}|{startLine}";
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(raw));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
-    private static byte[] EmbeddingToBytes(float[] embedding)
+    public static string ComputeContentHash(string content)
     {
-        return MemoryMarshal.AsBytes(embedding.AsSpan()).ToArray();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(TextSanitizer.Sanitize(content)));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
+
+    private static ProjectWorkspace ReadWorkspace(SqliteDataReader reader) => new()
+    {
+        ProjectKey = reader.GetString(0),
+        SourceRootPath = reader.GetString(1),
+        Status = Enum.Parse<ProjectStatus>(reader.GetString(2)),
+        TotalFiles = reader.GetInt32(3),
+        TotalSegments = reader.GetInt32(4),
+        LastIndexedUtc = ParseNullableDateTime(reader, 5),
+        LastRunId = ParseNullableString(reader, 6),
+        LastError = ParseNullableString(reader, 7)
+    };
+
+    private static IndexingRun ReadRun(SqliteDataReader reader) => new()
+    {
+        RunId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        RunType = Enum.Parse<IndexingRunType>(reader.GetString(2)),
+        Status = Enum.Parse<IndexingRunState>(reader.GetString(3)),
+        RequestedUtc = DateTime.Parse(reader.GetString(4)),
+        StartedUtc = ParseNullableDateTime(reader, 5),
+        CompletedUtc = ParseNullableDateTime(reader, 6),
+        RequestedFilePath = ParseNullableString(reader, 7),
+        TotalFilesPlanned = reader.GetInt32(8),
+        FilesScanned = reader.GetInt32(9),
+        FilesIndexed = reader.GetInt32(10),
+        FilesSkipped = reader.GetInt32(11),
+        SegmentsWritten = reader.GetInt32(12),
+        WarningCount = reader.GetInt32(13),
+        CurrentFilePath = ParseNullableString(reader, 14),
+        FailureReason = ParseNullableString(reader, 15)
+    };
+
+    private static async Task EnsureColumnAsync(
+        SqliteConnection connection,
+        string tableName,
+        string columnName,
+        string definition,
+        CancellationToken cancellationToken)
+    {
+        await using var infoCommand = connection.CreateCommand();
+        infoCommand.CommandText = $"PRAGMA table_info({tableName});";
+
+        var exists = false;
+        await using (var reader = await infoCommand.ExecuteReaderAsync(cancellationToken))
+        {
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                {
+                    exists = true;
+                    break;
+                }
+            }
+        }
+
+        if (exists)
+            return;
+
+        await using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};";
+        await alterCommand.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static IndexedFile ReadFile(SqliteDataReader reader) => new()
+    {
+        ProjectKey = reader.GetString(0),
+        RelativeFilePath = reader.GetString(1),
+        AbsoluteFilePath = reader.GetString(2),
+        FileName = reader.GetString(3),
+        Extension = reader.GetString(4),
+        Checksum = reader.GetString(5),
+        SizeBytes = reader.GetInt64(6),
+        LastModifiedUtc = DateTime.Parse(reader.GetString(7)),
+        LastIndexedUtc = DateTime.Parse(reader.GetString(8)),
+        SegmentCount = reader.GetInt32(9),
+        Availability = Enum.Parse<ProjectFileAvailability>(reader.GetString(10))
+    };
+
+    private static SearchSegment ReadSegment(SqliteDataReader reader) => new()
+    {
+        SegmentId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        RelativeFilePath = reader.GetString(2),
+        SegmentOrder = reader.GetInt32(3),
+        StartLine = reader.GetInt32(4),
+        EndLine = reader.GetInt32(5),
+        Content = reader.GetString(6),
+        SnippetPreview = reader.GetString(7),
+        ContentHash = reader.GetString(8),
+        EmbeddingVector = BytesToEmbedding((byte[])reader["EmbeddingVector"]),
+        TokenCount = reader.GetInt32(10),
+        CreatedUtc = DateTime.Parse(reader.GetString(11))
+    };
+
+    private static object ToDbValue(string? value) => value is null ? DBNull.Value : value;
+
+    private static object ToDbValue(DateTime? value) => value is null ? DBNull.Value : value.Value.ToString("O");
+
+    private static string? ParseNullableString(SqliteDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+
+    private static DateTime? ParseNullableDateTime(SqliteDataReader reader, int ordinal)
+        => reader.IsDBNull(ordinal) ? null : DateTime.Parse(reader.GetString(ordinal));
+
+    private static byte[] EmbeddingToBytes(float[] embedding)
+        => MemoryMarshal.AsBytes(embedding.AsSpan()).ToArray();
 
     private static float[] BytesToEmbedding(byte[] bytes)
     {
         var floats = new float[bytes.Length / sizeof(float)];
         MemoryMarshal.Cast<byte, float>(bytes.AsSpan()).CopyTo(floats.AsSpan());
         return floats;
+    }
+
+    private static async Task DeleteFileContentAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string projectKey,
+        string relativeFilePath,
+        CancellationToken cancellationToken)
+    {
+        await using var deleteSegments = connection.CreateCommand();
+        deleteSegments.Transaction = transaction;
+        deleteSegments.CommandText = """
+            DELETE FROM SearchSegments
+            WHERE ProjectKey = @ProjectKey AND RelativeFilePath = @RelativeFilePath;
+            """;
+        deleteSegments.Parameters.AddWithValue("@ProjectKey", projectKey);
+        deleteSegments.Parameters.AddWithValue("@RelativeFilePath", relativeFilePath);
+        await deleteSegments.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var deleteFile = connection.CreateCommand();
+        deleteFile.Transaction = transaction;
+        deleteFile.CommandText = """
+            DELETE FROM IndexedFiles
+            WHERE ProjectKey = @ProjectKey AND RelativeFilePath = @RelativeFilePath;
+            """;
+        deleteFile.Parameters.AddWithValue("@ProjectKey", projectKey);
+        deleteFile.Parameters.AddWithValue("@RelativeFilePath", relativeFilePath);
+        await deleteFile.ExecuteNonQueryAsync(cancellationToken);
     }
 }

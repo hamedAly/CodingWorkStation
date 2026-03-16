@@ -1,0 +1,49 @@
+@using System.ComponentModel.DataAnnotations
+
+<EditForm Model="_model" OnValidSubmit="SubmitAsync" class="card stack">
+    <DataAnnotationsValidator />
+
+    <div class="section-head">
+        <div>
+            <h2>Queue full indexing</h2>
+            <p>Provide an absolute project path and a unique project key.</p>
+        </div>
+    </div>
+
+    <div class="field-grid">
+        <div>
+            <label class="field-label" for="project-path">Project path</label>
+            <InputText id="project-path" class="field-input" @bind-Value="_model.ProjectPath" />
+            <ValidationMessage For="@(() => _model.ProjectPath)" />
+        </div>
+        <div>
+            <label class="field-label" for="project-key">Project key</label>
+            <InputText id="project-key" class="field-input" @bind-Value="_model.ProjectKey" />
+            <ValidationMessage For="@(() => _model.ProjectKey)" />
+        </div>
+    </div>
+
+    <button class="button" type="submit" disabled="@IsBusy">@(IsBusy ? "Queueing..." : "Start indexing")</button>
+</EditForm>
+
+@code {
+    private readonly IndexProjectFormModel _model = new();
+
+    [Parameter]
+    public bool IsBusy { get; set; }
+
+    [Parameter, EditorRequired]
+    public EventCallback<IndexProjectRequest> OnSubmit { get; set; }
+
+    private Task SubmitAsync()
+        => OnSubmit.InvokeAsync(new IndexProjectRequest(_model.ProjectPath.Trim(), _model.ProjectKey.Trim()));
+
+    private sealed class IndexProjectFormModel
+    {
+        [Required]
+        public string ProjectPath { get; set; } = string.Empty;
+
+        [Required]
+        public string ProjectKey { get; set; } = string.Empty;
+    }
+}

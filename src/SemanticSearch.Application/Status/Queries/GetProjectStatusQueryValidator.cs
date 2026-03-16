@@ -9,6 +9,6 @@ public sealed class GetProjectStatusQueryValidator : AbstractValidator<GetProjec
     {
         RuleFor(x => x.ProjectKey)
             .NotEmpty().WithMessage("ProjectKey is required.")
-            .MaximumLength(128).WithMessage("ProjectKey must not exceed 128 characters.");
+            .MaximumLength(64).WithMessage("ProjectKey must not exceed 64 characters.");
     }
 }

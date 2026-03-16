@@ -1,0 +1,98 @@
+@inject IOptions<SemanticSearchOptions> Options
+@inject WorkspaceApiClient WorkspaceApiClient
+
+<section class="card stack">
+    <div class="section-head">
+        <div>
+            <h2>Search controls</h2>
+            <p>Choose a project key, search mode, and query.</p>
+        </div>
+    </div>
+
+    <div class="field-grid">
+        <div>
+            <label class="field-label" for="search-project">Project key</label>
+            <select id="search-project" class="field-input" @bind="_projectKey">
+                <option value="">Select a project</option>
+                @foreach (var project in _projects)
+                {
+                    <option value="@project.ProjectKey">@project.ProjectKey</option>
+                }
+            </select>
+        </div>
+        <div>
+            <label class="field-label" for="search-query">Query</label>
+            <input id="search-query" class="field-input" @bind="_query" placeholder="authentication middleware" />
+        </div>
+    </div>
+
+    <div class="toggle-row">
+        <label class="toggle">
+            <input type="checkbox" @bind="_semanticMode" />
+            <span>@(_semanticMode ? "Semantic Search" : "Exact Search")</span>
+        </label>
+
+        @if (!_semanticMode)
+        {
+            <label class="toggle">
+                <input type="checkbox" @bind="_matchCase" />
+                <span>Match case</span>
+            </label>
+        }
+    </div>
+
+    <button class="button" @onclick="RunSearchAsync" disabled="@_isBusy">@( _isBusy ? "Searching..." : "Run search")</button>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="banner banner-error">@_errorMessage</p>
+    }
+</section>
+
+<SearchResults Response="@_response" />
+
+@code {
+    private IReadOnlyList<ProjectWorkspaceSummaryResponse> _projects = [];
+    private SearchResponse? _response;
+    private string _projectKey = string.Empty;
+    private string _query = string.Empty;
+    private bool _semanticMode = true;
+    private bool _matchCase;
+    private bool _isBusy;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _projects = await WorkspaceApiClient.ListProjectsAsync() ?? [];
+        _projectKey = _projects.FirstOrDefault()?.ProjectKey ?? string.Empty;
+    }
+
+    private async Task RunSearchAsync()
+    {
+        _isBusy = true;
+        _errorMessage = null;
+
+        try
+        {
+            _response = _semanticMode
+                ? await WorkspaceApiClient.SearchSemanticAsync(new SemanticSearchRequest(
+                    _query,
+                    _projectKey,
+                    Options.Value.Ui.DefaultSemanticTopK))
+                : await WorkspaceApiClient.SearchExactAsync(new ExactSearchRequest(
+                    _query,
+                    _projectKey,
+                    _matchCase,
+                    Options.Value.Ui.DefaultExactTopK));
+        }
+        catch (Exception ex)
+        {
+            _response = null;
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+}

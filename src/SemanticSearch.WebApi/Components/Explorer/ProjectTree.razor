@@ -1,0 +1,30 @@
+<section class="card stack">
+    <div class="section-head">
+        <div>
+            <h2>Project tree</h2>
+            <p>Browse the indexed structure for the selected project.</p>
+        </div>
+    </div>
+
+    @if (Nodes.Count == 0)
+    {
+        <p class="empty-state">No indexed files are available for this project yet.</p>
+    }
+    else
+    {
+        <div class="tree-root">
+            @foreach (var node in Nodes)
+            {
+                <ProjectTreeNodeView Node="@node" OnFileSelected="OnFileSelected" />
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public IReadOnlyList<ProjectTreeNodeResponse> Nodes { get; set; } = [];
+
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnFileSelected { get; set; }
+}

@@ -4,5 +4,5 @@ namespace SemanticSearch.Domain.Interfaces;
 
 public interface IFileChunker
 {
-    IReadOnlyList<ChunkInfo> ChunkFile(string filePath, int chunkSize, int overlap);
+    FileChunkingResult ChunkFile(string filePath, int chunkSize, int overlap);
 }

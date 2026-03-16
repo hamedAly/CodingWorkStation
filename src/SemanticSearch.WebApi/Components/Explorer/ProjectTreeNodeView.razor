@@ -1,0 +1,24 @@
+@if (Node.NodeType == "File")
+{
+    <button class="tree-file" @onclick="() => OnFileSelected.InvokeAsync(Node.RelativeFilePath!)">@Node.Name</button>
+}
+else
+{
+    <details class="tree-branch">
+        <summary>@Node.Name</summary>
+        <div class="tree-children">
+            @foreach (var child in Node.Children)
+            {
+                <ProjectTreeNodeView Node="@child" OnFileSelected="OnFileSelected" />
+            }
+        </div>
+    </details>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ProjectTreeNodeResponse Node { get; set; } = default!;
+
+    [Parameter, EditorRequired]
+    public EventCallback<string> OnFileSelected { get; set; }
+}

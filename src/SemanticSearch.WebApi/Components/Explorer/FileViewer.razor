@@ -1,0 +1,33 @@
+<section class="card stack">
+    <div class="section-head">
+        <div>
+            <h2>File viewer</h2>
+            <p>Open full file contents from the explorer.</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <p class="banner banner-error">@ErrorMessage</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(Content))
+    {
+        <p class="result-meta">@FilePath</p>
+        <pre class="snippet-block full-file"><code>@Content</code></pre>
+    }
+    else
+    {
+        <p class="empty-state">Select a file from the tree to view its contents.</p>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public string? FilePath { get; set; }
+
+    [Parameter]
+    public string? Content { get; set; }
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+}

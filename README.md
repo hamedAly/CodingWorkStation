@@ -1,70 +1,70 @@
-# SemanticSearch — Local Semantic Search Web API
+# SemanticSearch Workspace
 
-A 100% local, offline Semantic Search API for codebases. Uses ONNX embeddings (all-MiniLM-L6-v2) and SQLite for vector storage. Consumed by AI Agents to index and semantically search local code.
+Local semantic search workspace for codebases. The application runs entirely offline, serves both a Blazor-based UI and a .NET 10 Web API from one IIS-friendly ASP.NET Core host, stores vectors in a local SQLite database, and uses an ONNX copy of `all-MiniLM-L6-v2` for embeddings.
 
-## Features
+## What It Includes
 
-- **POST /api/search/index** — Queue a background indexing job for a local project directory
-- **POST /api/search/query** — Semantically search an indexed project for relevant code snippets
-- **GET /api/search/status/{projectKey}** — Check indexing progress and statistics
-- 100% offline — no external API calls; all inference is local via ONNX Runtime
-- IIS-hosted with absolute paths for production stability
+- Dashboard for active project keys, indexing status, file counts, and last updated time
+- Indexing panel for full project indexing and single-file refresh
+- Search workspace with semantic and exact search modes
+- Project explorer with indexed tree browsing and full-file reading
+- Offline Web API for indexing, search, status, tree, and file-read flows
+- Absolute-path storage rooted in `IWebHostEnvironment.ContentRootPath` for IIS hosting stability
 
-## Prerequisites
+## Runtime Requirements
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (or .NET 10 Runtime for IIS)
-- Windows Server with IIS + [ASP.NET Core Hosting Bundle](https://dotnet.microsoft.com/download/dotnet/10.0) installed
-- ONNX model files downloaded (see below)
+- .NET 10 SDK for development
+- ASP.NET Core Hosting Bundle for IIS deployment
+- Windows workstation or Windows Server
+- Local model files under `models/all-MiniLM-L6-v2/`
 
-## NuGet Packages
+## Required NuGet Packages
 
 | Package | Version | Purpose |
 |---------|---------|---------|
-| `Microsoft.ML.OnnxRuntime` | 1.20.1 | Local ONNX inference |
-| `Microsoft.ML.Tokenizers` | 0.22.0 | BERT WordPiece tokenizer |
-| `Microsoft.Data.Sqlite` | 9.0.3 | Vector store (SQLite) |
-| `MediatR` | 14.1.0 | CQRS mediator |
-| `FluentValidation` | 12.1.1 | Request validation |
+| `FluentValidation` | `12.1.1` | Application-layer validation |
+| `MediatR` | `14.1.0` | Command/query dispatch |
+| `Microsoft.Data.Sqlite` | `9.0.3` | Local file-based persistence |
+| `Microsoft.ML.OnnxRuntime` | `1.20.1` | Offline embedding inference |
+| `Microsoft.ML.Tokenizers` | `0.22.0` | Tokenization for the ONNX model |
 
-## Model Download
+## Model Setup
 
-Download `all-MiniLM-L6-v2` from HuggingFace and place files in `models/all-MiniLM-L6-v2/` at the application root:
+Place the model assets here:
 
-```
+```text
 models/
 └── all-MiniLM-L6-v2/
-    ├── model.onnx        (~90 MB) — from /onnx/model.onnx
-    ├── vocab.txt         (~232 KB) — from /vocab.txt
-    └── tokenizer.json    (~700 KB) — optional, for reference
+    ├── model.onnx
+    ├── vocab.txt
+    └── tokenizer.json
 ```
 
-### Download commands (PowerShell)
+PowerShell example:
 
 ```powershell
 New-Item -ItemType Directory -Force -Path "models\all-MiniLM-L6-v2"
-
-# Using huggingface-cli (pip install huggingface_hub):
 huggingface-cli download sentence-transformers/all-MiniLM-L6-v2 onnx/model.onnx --local-dir models/all-MiniLM-L6-v2
 huggingface-cli download sentence-transformers/all-MiniLM-L6-v2 vocab.txt --local-dir models/all-MiniLM-L6-v2
-
-# Or manually download from:
-# https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx
-# https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/vocab.txt
+huggingface-cli download sentence-transformers/all-MiniLM-L6-v2 tokenizer.json --local-dir models/all-MiniLM-L6-v2
 ```
 
-## Build & Run (Development)
+## Development
 
 ```powershell
-# From repository root
+dotnet restore SemanticSearch.slnx
 dotnet build SemanticSearch.slnx
-
-# Run (Kestrel)
 dotnet run --project src/SemanticSearch.WebApi --urls "http://localhost:5000"
 ```
 
-In development, `appsettings.Development.json` resolves `ModelPath` and `DatabasePath` to the repository-root `models/` and `data/` folders so `dotnet run` works from this repo layout.
+Open:
 
-## Configuration (appsettings.json)
+- UI: `http://localhost:5000/`
+- API: `http://localhost:5000/api/...`
+
+## Configuration
+
+`src/SemanticSearch.WebApi/appsettings.json`
 
 ```json
 {
@@ -75,110 +75,116 @@ In development, `appsettings.Development.json` resolves `ModelPath` and `Databas
       "ChunkSize": 200,
       "Overlap": 40
     },
+    "Ui": {
+      "DashboardPollSeconds": 5,
+      "DefaultSemanticTopK": 5,
+      "DefaultExactTopK": 50
+    },
     "Indexing": {
-      "ExcludedDirectories": ["bin", "obj", ".git", "node_modules"],
-      "AllowedExtensions": [".cs", ".ts", ".py", ".go", ".md", ...]
+      "ExcludedDirectories": ["bin", "obj", ".git", "node_modules", ".vs", "packages"],
+      "AllowedExtensions": [".cs", ".ts", ".js", ".py", ".md", ".json", ".razor"]
     }
   }
 }
 ```
 
-Paths are relative to `ContentRootPath` (the application directory). Under IIS, this is always the published application folder.
+All configured paths are resolved relative to the application content root.
 
-## API Usage
+## API Routes
 
-### Index a Project
+- `GET /api/project`
+- `POST /api/project/index`
+- `POST /api/project/index/file`
+- `GET /api/project/status/{projectKey}`
+- `GET /api/project/tree/{projectKey}`
+- `POST /api/search/semantic`
+- `POST /api/search/exact`
+- `POST /api/file/read`
 
-```bash
-curl -X POST http://localhost:5000/api/search/index \
-  -H "Content-Type: application/json" \
-  -d '{"projectPath": "C:\\Projects\\MyApp", "projectKey": "myapp"}'
+## API Examples
 
-# Response (202 Accepted):
-# {"projectKey":"myapp","status":"queued","message":"Indexing queued..."}
+Full indexing:
+
+```powershell
+$body = @{
+  projectPath = 'D:\Indexing\sample-projects\single-file-csharp'
+  projectKey = 'single-file-csharp'
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/project/index -ContentType 'application/json' -Body $body
 ```
 
-### Search
+Semantic search:
 
-```bash
-curl -X POST http://localhost:5000/api/search/query \
-  -H "Content-Type: application/json" \
-  -d '{"query": "authentication middleware", "projectKey": "myapp", "topK": 5}'
+```powershell
+$semantic = @{
+  query = 'report service'
+  projectKey = 'single-file-csharp'
+  topK = 5
+} | ConvertTo-Json
 
-# Response (200 OK):
-# {"results": [{"filePath": "...", "relevanceScore": 0.87, "snippet": "...", "startLine": 42, "endLine": 241}]}
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/search/semantic -ContentType 'application/json' -Body $semantic
 ```
 
-### Check Status
+Exact search:
 
-```bash
-curl http://localhost:5000/api/search/status/myapp
+```powershell
+$exact = @{
+  keyword = 'GenerateReport'
+  projectKey = 'single-file-csharp'
+  matchCase = $false
+  topK = 20
+} | ConvertTo-Json
 
-# Response (200 OK):
-# {"isIndexed": true, "totalFiles": 142, "totalChunks": 1823, "lastUpdated": "2026-03-14T..."}
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/search/exact -ContentType 'application/json' -Body $exact
 ```
 
-## IIS Deployment
+Read a full file:
 
-### Publish
+```powershell
+$file = @{
+  projectKey = 'single-file-csharp'
+  relativeFilePath = 'ReportService.cs'
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/file/read -ContentType 'application/json' -Body $file
+```
+
+## IIS Deployment Notes
+
+Publish:
 
 ```powershell
 dotnet publish src/SemanticSearch.WebApi -c Release -o publish/
 ```
 
-### IIS Application Pool — Required Settings
+Recommended IIS application pool settings:
 
-| Setting | Value | Reason |
-|---------|-------|--------|
-| `.NET CLR version` | `No Managed Code` | ASP.NET Core handles its own runtime |
-| `Start Mode` | `AlwaysRunning` | Background worker must start with IIS, not on first request |
-| `Idle Time-out` | `0` (disabled) | Prevents pool shutdown during inactive periods |
-| `Regular Time Interval (minutes)` | `0` (disabled) | Prevents periodic recycling that kills the background worker |
-| `preloadEnabled` | `true` | Warms up the app pool on IIS start |
+| Setting | Value |
+|---------|-------|
+| `.NET CLR version` | `No Managed Code` |
+| `Start Mode` | `AlwaysRunning` |
+| `Idle Time-out` | `0` |
+| `Regular Time Interval` | `0` |
+| `preloadEnabled` | `true` |
 
-### PowerShell: Configure App Pool
+Important notes:
 
-```powershell
-Import-Module WebAdministration
+- Keep `models/` and `data/` beside the published application root.
+- The app creates and reads the SQLite database through absolute paths under the content root.
+- The background indexing worker starts with the web host, so app-pool cold starts affect indexing availability.
+- If the content-root path changes between environments, move the model and database folders with the deployment.
 
-$poolName = "SemanticSearchPool"
-New-WebAppPool -Name $poolName
-Set-ItemProperty "IIS:\AppPools\$poolName" managedRuntimeVersion ""
-Set-ItemProperty "IIS:\AppPools\$poolName" startMode "AlwaysRunning"
-Set-ItemProperty "IIS:\AppPools\$poolName" processModel.idleTimeout ([TimeSpan]::Zero)
-Set-ItemProperty "IIS:\AppPools\$poolName" recycling.periodicRestart.time ([TimeSpan]::Zero)
+## Repository Layout
 
-# Create site
-New-Website -Name "SemanticSearch" -Port 80 -PhysicalPath "C:\inetpub\SemanticSearch" -ApplicationPool $poolName
-Set-ItemProperty "IIS:\Sites\SemanticSearch" -Name applicationDefaults.preloadEnabled -Value $true
-```
-
-### Model files in publish output
-
-If the repository-root `models/` folder exists when `dotnet publish` runs, it is copied into the publish directory automatically. Verify that the publish output contains `models\all-MiniLM-L6-v2\model.onnx` and `vocab.txt`.
-
-If you publish from a machine or pipeline that does not have the repository-root `models/` folder, copy it manually after publish:
-```powershell
-Copy-Item -Recurse models\ publish\models\
-```
-
-### Notes
-
-- All file paths use absolute paths derived from `IWebHostEnvironment.ContentRootPath`
-- SQLite database is at `{ContentRootPath}\data\vectorstore.db`
-- ONNX model is at `{ContentRootPath}\models\all-MiniLM-L6-v2\model.onnx`
-- In-flight indexing is lost on app pool recycle; re-POST to `/api/search/index` to restart
-- The `data/` and `logs/` directories are created automatically on startup
-
-## Project Structure
-
-```
+```text
 src/
-├── SemanticSearch.Domain/         # Entities, value objects, interfaces
-├── SemanticSearch.Application/    # Commands, queries, validators, behaviors
-├── SemanticSearch.Infrastructure/ # ONNX, SQLite, file system, background worker
-└── SemanticSearch.WebApi/         # Controllers, middleware, Program.cs
-models/                            # ONNX model files (not in git)
-data/                              # SQLite database (not in git)
-specs/                             # Feature specifications (speckit)
+├── SemanticSearch.Domain/
+├── SemanticSearch.Application/
+├── SemanticSearch.Infrastructure/
+└── SemanticSearch.WebApi/
+models/
+data/
+sample-projects/
+specs/
 ```

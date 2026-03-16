@@ -1,8 +1,8 @@
-using SemanticSearch.Application.Indexing.Commands;
+using SemanticSearch.Application.Common.Models;
 
 namespace SemanticSearch.Application.Common.Interfaces;
 
 public interface IIndexingQueue
 {
-    ValueTask EnqueueAsync(IndexProjectCommand command, CancellationToken cancellationToken = default);
+    ValueTask EnqueueAsync(IndexingWorkItem workItem, CancellationToken cancellationToken = default);
 }

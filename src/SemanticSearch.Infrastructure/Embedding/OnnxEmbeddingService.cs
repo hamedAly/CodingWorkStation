@@ -2,6 +2,7 @@ using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using Microsoft.ML.Tokenizers;
 using SemanticSearch.Domain.Interfaces;
+using SemanticSearch.Infrastructure.Common;
 
 namespace SemanticSearch.Infrastructure.Embedding;
 
@@ -37,10 +38,14 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IDisposable
     public Task<float[]> GenerateEmbeddingAsync(string text, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var sanitizedText = TextSanitizer.Sanitize(text);
+
+        if (string.IsNullOrWhiteSpace(sanitizedText))
+            sanitizedText = " ";
 
         // Tokenize with [CLS] and [SEP] special tokens, truncate to MaxTokens
         var tokenIds = _tokenizer.EncodeToIds(
-            text,
+            sanitizedText,
             maxTokenCount: MaxTokens,
             addSpecialTokens: true,
             normalizedText: out _,

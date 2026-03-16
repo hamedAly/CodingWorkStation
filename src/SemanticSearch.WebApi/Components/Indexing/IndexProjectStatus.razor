@@ -1,0 +1,118 @@
+<section class="card stack">
+    <div class="section-head">
+        <div>
+            <h2>Latest request result</h2>
+            <p>Track the active run, its current progress, and pause or resume long indexing jobs.</p>
+        </div>
+    </div>
+
+    @if (Response is not null || Status is not null)
+    {
+        <dl class="metric-list">
+            <div>
+                <dt>Project key</dt>
+                <dd>@(Status?.ProjectKey ?? Response?.ProjectKey)</dd>
+            </div>
+            <div>
+                <dt>Run ID</dt>
+                <dd class="mono">@(Status?.RunId ?? Response?.RunId ?? "Pending")</dd>
+            </div>
+            <div>
+                <dt>Status</dt>
+                <dd>@(Status?.Status ?? Response?.Status)</dd>
+            </div>
+            @if (Status is not null)
+            {
+                <div>
+                    <dt>Processed</dt>
+                    <dd>@Status.FilesProcessed / @Status.TotalFilesPlanned</dd>
+                </div>
+                <div>
+                    <dt>Progress</dt>
+                    <dd>@Status.ProgressPercent.ToString("0.#")%</dd>
+                </div>
+            }
+        </dl>
+
+        @if (Status is not null && Status.TotalFilesPlanned > 0)
+        {
+            <div class="progress-block">
+                <div class="progress-head">
+                    <span>Indexing progress</span>
+                    <strong>@Status.ProgressPercent.ToString("0.#")%</strong>
+                </div>
+                <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="@Status.ProgressPercent">
+                    <div class="progress-fill" style="width: @($"{Status.ProgressPercent:0.#}%");"></div>
+                </div>
+            </div>
+        }
+
+        @if (Status is not null && !string.IsNullOrWhiteSpace(Status.CurrentFilePath))
+        {
+            <p class="result-meta">Current file: @Status.CurrentFilePath</p>
+        }
+
+        @if (Status is not null && Status.Status == "Queued")
+        {
+            <p class="banner banner-warn">This run is waiting for the worker.</p>
+        }
+        else if (Status is not null && Status.TotalFilesPlanned == 0 && Status.Status == "Indexing")
+        {
+            <p class="banner banner-warn">The worker is scanning project files.</p>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Message ?? Response?.Message))
+        {
+            <p class="banner banner-success">@(Message ?? Response?.Message)</p>
+        }
+        @if (Status is not null && (Status.CanPause || Status.CanResume))
+        {
+            <div class="status-card-actions">
+                @if (Status.CanPause)
+                {
+                    <button class="button" @onclick="() => OnPauseRequested.InvokeAsync(Status.ProjectKey)" disabled="@IsRefreshing">Pause indexing</button>
+                }
+                @if (Status.CanResume)
+                {
+                    <button class="button button-secondary" @onclick="() => OnResumeRequested.InvokeAsync(Status.ProjectKey)" disabled="@IsRefreshing">Resume indexing</button>
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <p class="banner banner-error">@ErrorMessage</p>
+        }
+    }
+    else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <p class="banner banner-error">@ErrorMessage</p>
+    }
+    else
+    {
+        <p class="empty-state">Submit an indexing request to see the latest status here.</p>
+    }
+</section>
+
+@code {
+    [Parameter]
+    public IndexAcceptedResponse? Response { get; set; }
+
+    [Parameter]
+    public ProjectStatusResponse? Status { get; set; }
+
+    [Parameter]
+    public string? Message { get; set; }
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    [Parameter]
+    public bool IsRefreshing { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnPauseRequested { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnResumeRequested { get; set; }
+}

@@ -25,6 +25,7 @@ public sealed class ProjectScanner : IProjectScanner
 
         var results = new List<string>();
         ScanDirectory(projectPath, excludedDirs, allowedExtensions, results);
+        results.Sort(StringComparer.OrdinalIgnoreCase);
         _logger.LogInformation("Scanned {Count} files in {ProjectPath}", results.Count, projectPath);
         return results;
     }
@@ -37,14 +38,14 @@ public sealed class ProjectScanner : IProjectScanner
     {
         try
         {
-            foreach (var file in Directory.EnumerateFiles(directory))
+            foreach (var file in Directory.EnumerateFiles(directory).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {
                 var ext = Path.GetExtension(file);
                 if (allowedExtensions.Contains(ext, StringComparer.OrdinalIgnoreCase))
                     results.Add(file);
             }
 
-            foreach (var subDir in Directory.EnumerateDirectories(directory))
+            foreach (var subDir in Directory.EnumerateDirectories(directory).OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
             {
                 var dirName = Path.GetFileName(subDir);
                 if (excludedDirs.Contains(dirName, StringComparer.OrdinalIgnoreCase))

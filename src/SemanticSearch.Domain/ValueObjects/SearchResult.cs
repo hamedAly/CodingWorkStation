@@ -1,8 +1,9 @@
 namespace SemanticSearch.Domain.ValueObjects;
 
 public sealed record SearchResult(
-    string FilePath,
-    float RelevanceScore,
+    string RelativeFilePath,
+    float Score,
     string Snippet,
     int StartLine,
-    int EndLine);
+    int EndLine,
+    SearchMode MatchType);
