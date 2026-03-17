@@ -1,0 +1,200 @@
+openapi: 3.0.3
+info:
+  title: Quality AI Assistant API
+  version: 1.0.0
+  description: Offline streaming API contract for the local AI tech lead assistant embedded in the quality dashboard.
+servers:
+  - url: http://localhost:5000
+tags:
+  - name: Quality AI
+paths:
+  /api/quality/ai/status:
+    get:
+      tags: [Quality AI]
+      summary: Get local assistant readiness for the current application run
+      responses:
+        '200':
+          description: Assistant readiness status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantStatusResponse'
+  /api/quality/ai/project-plan/stream:
+    post:
+      tags: [Quality AI]
+      summary: Stream a project-level three-point action plan for the selected quality snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectPlanStreamRequest'
+      responses:
+        '200':
+          description: Ordered NDJSON stream of assistant events
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/AiStreamEvent'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Quality snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Another project-plan stream is already active for the same UI surface
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Local assistant is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /api/quality/ai/finding-fix/stream:
+    post:
+      tags: [Quality AI]
+      summary: Stream duplicate-specific consolidation guidance for one finding
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FindingFixStreamRequest'
+      responses:
+        '200':
+          description: Ordered NDJSON stream of assistant events
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/AiStreamEvent'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          description: Duplicate comparison context not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Another duplicate-fix stream is already active for the same UI surface
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '413':
+          description: The duplicate comparison content exceeds the supported prompt size
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: Local assistant is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+components:
+  responses:
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationProblemDetails'
+  schemas:
+    AssistantStatusResponse:
+      type: object
+      required: [status, modelLabel, checkedAtUtc]
+      properties:
+        status:
+          type: string
+          enum: [Initializing, Ready, Unavailable, Failed]
+        modelLabel:
+          type: string
+        checkedAtUtc:
+          type: string
+          format: date-time
+        failureReason:
+          type: string
+          nullable: true
+    ProjectPlanStreamRequest:
+      type: object
+      required: [projectKey, runId]
+      properties:
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        runId:
+          type: string
+          minLength: 1
+    FindingFixStreamRequest:
+      type: object
+      required: [projectKey, findingId]
+      properties:
+        projectKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        findingId:
+          type: string
+          minLength: 1
+    AiStreamEvent:
+      type: object
+      required: [sessionId, eventType, sequence, occurredAtUtc]
+      properties:
+        sessionId:
+          type: string
+        eventType:
+          type: string
+          enum: [Started, Token, Completed, Cancelled, Error]
+        sequence:
+          type: integer
+          minimum: 0
+        markdownDelta:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        occurredAtUtc:
+          type: string
+          format: date-time
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          nullable: true
+        title:
+          type: string
+          nullable: true
+        status:
+          type: integer
+          nullable: true
+        detail:
+          type: string
+          nullable: true
+        instance:
+          type: string
+          nullable: true
+        errorId:
+          type: string
+          nullable: true
+    ValidationProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          properties:
+            errors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string

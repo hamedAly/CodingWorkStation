@@ -31,6 +31,16 @@ public sealed class ExceptionHandlingMiddleware
             _logger.LogInformation(ex, "Conflict for request {Path}", context.Request.Path);
             await WriteProblemAsync(context, StatusCodes.Status409Conflict, ex.Message);
         }
+        catch (PayloadTooLargeException ex)
+        {
+            _logger.LogInformation(ex, "Request too large for request {Path}", context.Request.Path);
+            await WriteProblemAsync(context, StatusCodes.Status413PayloadTooLarge, ex.Message);
+        }
+        catch (ServiceUnavailableException ex)
+        {
+            _logger.LogInformation(ex, "Service unavailable for request {Path}", context.Request.Path);
+            await WriteProblemAsync(context, StatusCodes.Status503ServiceUnavailable, ex.Message);
+        }
         catch (ValidationException ex)
         {
             _logger.LogInformation(ex, "Validation failed for request {Path}", context.Request.Path);

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
 using SemanticSearch.WebApi.Contracts.Files;
@@ -11,12 +12,14 @@ namespace SemanticSearch.WebApi.Services;
 public sealed class WorkspaceApiClient
 {
     private readonly HttpClient _httpClient;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public WorkspaceApiClient(NavigationManager navigationManager)
     {
         _httpClient = new HttpClient
         {
-            BaseAddress = new Uri(navigationManager.BaseUri)
+            BaseAddress = new Uri(navigationManager.BaseUri),
+            Timeout = TimeSpan.FromMinutes(5)
         };
     }
 
@@ -70,6 +73,19 @@ public sealed class WorkspaceApiClient
 
     public Task<QualityRunResponse> RunSemanticAnalysisAsync(SemanticDuplicationRequest request, CancellationToken cancellationToken = default)
         => PostAsync<SemanticDuplicationRequest, QualityRunResponse>("api/quality/semantic", request, cancellationToken);
+
+    public Task<AssistantStatusResponse?> GetAssistantStatusAsync(CancellationToken cancellationToken = default)
+        => GetAsync<AssistantStatusResponse>("api/quality/ai/status", cancellationToken);
+
+    public IAsyncEnumerable<AiStreamEventResponse> StreamProjectPlanAsync(
+        ProjectPlanStreamRequest request,
+        CancellationToken cancellationToken = default)
+        => StreamAsync("api/quality/ai/project-plan/stream", request, cancellationToken);
+
+    public IAsyncEnumerable<AiStreamEventResponse> StreamFindingFixAsync(
+        FindingFixStreamRequest request,
+        CancellationToken cancellationToken = default)
+        => StreamAsync("api/quality/ai/finding-fix/stream", request, cancellationToken);
 
     private async Task<TResponse?> GetAsync<TResponse>(string url, CancellationToken cancellationToken)
     {
@@ -136,5 +152,45 @@ public sealed class WorkspaceApiClient
         }
 
         return raw;
+    }
+
+    private async IAsyncEnumerable<AiStreamEventResponse> StreamAsync<TRequest>(
+        string url,
+        TRequest request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = JsonContent.Create(request)
+        };
+        httpRequest.Headers.Accept.ParseAdd("application/x-ndjson");
+
+        using var response = await _httpClient.SendAsync(
+            httpRequest,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                yield break;
+            }
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var item = JsonSerializer.Deserialize<AiStreamEventResponse>(line, JsonOptions);
+            if (item is not null)
+            {
+                yield return item;
+            }
+        }
     }
 }

@@ -1,0 +1,84 @@
+@if (IsOpen)
+{
+    <section class="@BuildPanelClassName()">
+        <div class="section-head ai-panel-head">
+            <div>
+                <p class="eyebrow">Local AI Tech Lead</p>
+                <h3>Architectural action plan</h3>
+            </div>
+            <div class="ai-panel-actions">
+                <button class="button button-secondary" @onclick="ToggleFullscreen">@(_isFullscreen ? "Exit Full Screen" : "Full Screen")</button>
+                <button class="button button-secondary" @onclick="OnGenerate" disabled="@IsBusy">Regenerate</button>
+                <button class="button" @onclick="OnCancel" disabled="@(!IsBusy)">Stop</button>
+            </div>
+        </div>
+
+        @if (Status is not null && !string.Equals(Status.Status, "Ready", StringComparison.OrdinalIgnoreCase))
+        {
+            <p class="banner banner-warn">Local assistant status: @Status.Status. @Status.FailureReason</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <p class="banner banner-error">@ErrorMessage</p>
+        }
+
+        <div class="@BuildTerminalClassName()" id="@PanelId">
+            <StreamingMarkdown
+                ElementId="@PanelId"
+                Markdown="@Markdown"
+                Placeholder="Generate a local action plan to turn summary metrics into concrete remediation steps."
+                ClassName="ai-terminal-markdown" />
+        </div>
+
+        <p class="ai-panel-meta">
+            @if (IsBusy)
+            {
+                <span>Generating response from the local GGUF model...</span>
+            }
+            else if (Status is not null)
+            {
+                <span>Assistant status: @Status.Status</span>
+            }
+        </p>
+    </section>
+}
+
+@code {
+    private bool _isFullscreen;
+
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public bool IsBusy { get; set; }
+
+    [Parameter]
+    public string Markdown { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    [Parameter]
+    public AssistantStatusResponse? Status { get; set; }
+
+    [Parameter]
+    public EventCallback OnGenerate { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private void ToggleFullscreen()
+        => _isFullscreen = !_isFullscreen;
+
+    private string BuildPanelClassName()
+        => _isFullscreen
+            ? "card ai-panel ai-panel-project ai-panel-fullscreen"
+            : "card ai-panel ai-panel-project";
+
+    private string BuildTerminalClassName()
+        => _isFullscreen
+            ? "ai-terminal-shell ai-terminal-shell-fullscreen"
+            : "ai-terminal-shell";
+
+    private string PanelId => "project-action-plan-output";
+}

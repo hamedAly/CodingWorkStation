@@ -9,6 +9,7 @@ Local semantic search workspace for codebases. The application runs entirely off
 - Search workspace with semantic and exact search modes
 - Project explorer with indexed tree browsing and full-file reading
 - Quality dashboard for structural and semantic duplication analysis with side-by-side evidence review
+- Local AI tech lead assistant for project-level action plans and duplicate-specific refactoring guidance
 - Offline Web API for indexing, search, status, tree, and file-read flows
 - Absolute-path storage rooted in `IWebHostEnvironment.ContentRootPath` for IIS hosting stability
 
@@ -18,6 +19,7 @@ Local semantic search workspace for codebases. The application runs entirely off
 - ASP.NET Core Hosting Bundle for IIS deployment
 - Windows workstation or Windows Server
 - Local model files under `models/all-MiniLM-L6-v2/`
+- Optional GGUF coding model under `models/llm/` for the local AI assistant
 
 ## Required NuGet Packages
 
@@ -29,6 +31,9 @@ Local semantic search workspace for codebases. The application runs entirely off
 | `Microsoft.Data.Sqlite` | `9.0.3` | Local file-based persistence |
 | `Microsoft.ML.OnnxRuntime` | `1.20.1` | Offline embedding inference |
 | `Microsoft.ML.Tokenizers` | `0.22.0` | Tokenization for the ONNX model |
+| `LLamaSharp` | `0.26.0` | Local GGUF model loading and token streaming |
+| `LLamaSharp.Backend.Cpu` | `0.26.0` | CPU inference backend for the local assistant |
+| `Markdig` | `1.1.1` | Real-time markdown rendering in the Blazor UI |
 
 ## Model Setup
 
@@ -49,6 +54,9 @@ New-Item -ItemType Directory -Force -Path "models\all-MiniLM-L6-v2"
 huggingface-cli download sentence-transformers/all-MiniLM-L6-v2 onnx/model.onnx --local-dir models/all-MiniLM-L6-v2
 huggingface-cli download sentence-transformers/all-MiniLM-L6-v2 vocab.txt --local-dir models/all-MiniLM-L6-v2
 huggingface-cli download sentence-transformers/all-MiniLM-L6-v2 tokenizer.json --local-dir models/all-MiniLM-L6-v2
+New-Item -ItemType Directory -Force -Path "models\\llm"
+# Place your GGUF coding model here, for example:
+# models\\llm\\qwen2.5-coder-instruct.gguf
 ```
 
 ## Development
@@ -108,6 +116,9 @@ All configured paths are resolved relative to the application content root.
 - `GET /api/quality/{projectKey}/findings/{findingId}`
 - `POST /api/quality/structural`
 - `POST /api/quality/semantic`
+- `GET /api/quality/ai/status`
+- `POST /api/quality/ai/project-plan/stream`
+- `POST /api/quality/ai/finding-fix/stream`
 
 ## API Examples
 
@@ -204,8 +215,9 @@ The quality dashboard lives at `/quality` and reuses the indexed project catalog
 - structural duplication analysis for C# files using normalized Roslyn syntax fingerprints
 - semantic duplication analysis over persisted local embeddings
 - a dashboard hero with grade, total LOC, duplication percentage, and clone counts
+- a local AI action-plan panel that streams a three-point remediation plan from the current summary
 - a doughnut chart for unique, structural, and semantic line breakdown
-- a findings table with line ranges and a side-by-side comparison modal
+- a findings table with line ranges, a side-by-side comparison modal, and a local refactoring panel that streams proposed merged C# code
 
 Quality API example:
 
@@ -217,5 +229,11 @@ $structural = @{
 
 Invoke-RestMethod -Method Post -Uri http://localhost:5000/api/quality/structural -ContentType 'application/json' -Body $structural
 Invoke-RestMethod -Method Get -Uri http://localhost:5000/api/quality/single-file-csharp
+```
+
+Assistant status example:
+
+```powershell
+Invoke-RestMethod -Method Get -Uri http://localhost:5000/api/quality/ai/status
 ```
 

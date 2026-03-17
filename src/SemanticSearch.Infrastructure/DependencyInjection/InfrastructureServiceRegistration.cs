@@ -9,6 +9,7 @@ using SemanticSearch.Infrastructure.FileSystem;
 using SemanticSearch.Infrastructure.Indexing;
 using SemanticSearch.Infrastructure.ProjectTree;
 using SemanticSearch.Infrastructure.Quality;
+using SemanticSearch.Infrastructure.Quality.Assistant;
 using SemanticSearch.Infrastructure.Search;
 using SemanticSearch.Infrastructure.VectorStore;
 
@@ -47,6 +48,11 @@ public static class InfrastructureServiceRegistration
         services.AddSingleton<IComparisonHighlightService, ComparisonHighlightService>();
         services.AddSingleton<IQualityRunCoordinator, QualityRunCoordinator>();
         services.AddSingleton<QualityRefreshPolicy>();
+        services.AddSingleton<AssistantReadinessService>();
+        services.AddSingleton<IAiAssistantModelProvider, LlamaModelProvider>();
+        services.AddSingleton<DuplicateSnippetLimiter>();
+        services.AddSingleton<IQualityAssistantPromptBuilder, QualityAssistantPromptBuilder>();
+        services.AddSingleton<IQualityAssistantService, LlamaStreamingAssistantService>();
 
         var indexingChannel = new IndexingChannel();
         services.AddSingleton(indexingChannel);

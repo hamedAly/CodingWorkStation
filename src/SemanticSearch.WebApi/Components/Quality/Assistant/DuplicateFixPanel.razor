@@ -1,0 +1,70 @@
+@if (IsOpen)
+{
+    <section class="ai-panel ai-panel-fix">
+        @if (Status is not null && !string.Equals(Status.Status, "Ready", StringComparison.OrdinalIgnoreCase))
+        {
+            <p class="banner banner-warn">Local assistant status: @Status.Status. @Status.FailureReason</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <p class="banner banner-error">@ErrorMessage</p>
+        }
+
+        <div class="ai-fix-shell">
+            <div class="ai-fix-toolbar">
+                <div>
+                    <p class="eyebrow">Local AI Refactor</p>
+                    <h3>Duplicate consolidation proposal</h3>
+                </div>
+                <div class="ai-panel-actions">
+                    <button class="button button-secondary" @onclick="OnGenerate" disabled="@IsBusy">Retry</button>
+                    <button class="button" @onclick="OnCancel" disabled="@(!IsBusy)">Stop</button>
+                </div>
+            </div>
+
+            <div class="ai-fix-output" id="@PanelId">
+                <StreamingMarkdown
+                    ElementId="@PanelId"
+                    Markdown="@Markdown"
+                    Placeholder="Ask the local assistant to propose a shared refactor for this duplicate pair."
+                    ClassName="ai-fix-markdown" />
+            </div>
+        </div>
+
+        <p class="ai-panel-meta">
+            @if (IsBusy)
+            {
+                <span>Generating merged C# guidance from the local model...</span>
+            }
+            else if (Status is not null)
+            {
+                <span>Assistant status: @Status.Status</span>
+            }
+        </p>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public bool IsOpen { get; set; }
+
+    [Parameter]
+    public bool IsBusy { get; set; }
+
+    [Parameter]
+    public string Markdown { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? ErrorMessage { get; set; }
+
+    [Parameter]
+    public AssistantStatusResponse? Status { get; set; }
+
+    [Parameter]
+    public EventCallback OnGenerate { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private string PanelId => "duplicate-fix-output";
+}

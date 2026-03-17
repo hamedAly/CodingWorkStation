@@ -1,0 +1,36 @@
+@inject MarkdownRenderService MarkdownRenderService
+
+@if (!string.IsNullOrWhiteSpace(Markdown))
+{
+    <div id="@ElementId" class="@BuildClassName()">
+        @((MarkupString)_html)
+    </div>
+}
+else if (!string.IsNullOrWhiteSpace(Placeholder))
+{
+    <p class="empty-state">@Placeholder</p>
+}
+
+@code {
+    private string _html = string.Empty;
+
+    [Parameter]
+    public string Markdown { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Placeholder { get; set; }
+
+    [Parameter]
+    public string? ClassName { get; set; }
+
+    [Parameter]
+    public string? ElementId { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        _html = MarkdownRenderService.Render(Markdown);
+    }
+
+    private string BuildClassName()
+        => string.IsNullOrWhiteSpace(ClassName) ? "stream-markdown" : $"stream-markdown {ClassName}";
+}

@@ -1,3 +1,6 @@
+@implements IDisposable
+@inject WorkspaceApiClient WorkspaceApiClient
+
 @if (IsOpen)
 {
     <div class="quality-modal-backdrop" @onclick="CloseAsync">
@@ -27,13 +30,43 @@
                     <CodeRegionPane Title="Left region" Region="@Comparison.Finding.LeftRegion" />
                     <CodeRegionPane Title="Right region" Region="@Comparison.Finding.RightRegion" />
                 </div>
+
+                <div class="ai-modal-action-bar">
+                    <div>
+                        <p class="eyebrow">Local AI Refactor</p>
+                        <strong>Ask Local AI to Fix This</strong>
+                    </div>
+                    <button class="button" @onclick="GenerateFixAsync" disabled="@_isFixBusy">Ask Local AI to Fix This</button>
+                </div>
+
+                <DuplicateFixPanel
+                    IsOpen="@_isFixPanelOpen"
+                    IsBusy="@_isFixBusy"
+                    Markdown="@_fixMarkdown"
+                    ErrorMessage="@_fixError"
+                    Status="@_assistantStatus"
+                    OnGenerate="@GenerateFixAsync"
+                    OnCancel="@CancelFixAsync" />
             }
         </section>
     </div>
 }
 
 @code {
-    private Task CloseAsync() => OnClose.InvokeAsync();
+    private readonly CancellationTokenSource _disposeTokenSource = new();
+    private CancellationTokenSource? _streamTokenSource;
+    private AssistantStatusResponse? _assistantStatus;
+    private string? _loadedFindingId;
+    private string _fixMarkdown = string.Empty;
+    private string? _fixError;
+    private bool _isFixBusy;
+    private bool _isFixPanelOpen;
+
+    private async Task CloseAsync()
+    {
+        _streamTokenSource?.Cancel();
+        await OnClose.InvokeAsync();
+    }
 
     [Parameter]
     public bool IsOpen { get; set; }
@@ -48,6 +81,110 @@
     public DuplicateComparisonResponse? Comparison { get; set; }
 
     [Parameter]
+    public string? ProjectKey { get; set; }
+
+    [Parameter]
     public EventCallback OnClose { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var findingId = Comparison?.Finding.FindingId;
+        if (!string.Equals(_loadedFindingId, findingId, StringComparison.Ordinal))
+        {
+            _loadedFindingId = findingId;
+            _fixMarkdown = string.Empty;
+            _fixError = null;
+            _isFixBusy = false;
+            _isFixPanelOpen = false;
+        }
+
+        if (IsOpen && Comparison is not null)
+        {
+            await LoadAssistantStatusAsync();
+        }
+    }
+
+    private async Task LoadAssistantStatusAsync()
+    {
+        try
+        {
+            _assistantStatus = await WorkspaceApiClient.GetAssistantStatusAsync(_disposeTokenSource.Token);
+        }
+        catch (Exception ex)
+        {
+            _assistantStatus = new AssistantStatusResponse("Failed", "Local assistant", DateTime.UtcNow, ex.Message);
+        }
+    }
+
+    private async Task GenerateFixAsync()
+    {
+        if (_isFixBusy || Comparison is null || string.IsNullOrWhiteSpace(ProjectKey))
+        {
+            return;
+        }
+
+        _isFixPanelOpen = true;
+        _isFixBusy = true;
+        _fixMarkdown = string.Empty;
+        _fixError = null;
+        _streamTokenSource?.Cancel();
+        _streamTokenSource?.Dispose();
+        _streamTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token);
+
+        await LoadAssistantStatusAsync();
+        if (_assistantStatus is not null && !string.Equals(_assistantStatus.Status, "Ready", StringComparison.OrdinalIgnoreCase))
+        {
+            _fixError = _assistantStatus.FailureReason;
+            _isFixBusy = false;
+            return;
+        }
+
+        try
+        {
+            await foreach (var item in WorkspaceApiClient.StreamFindingFixAsync(
+                               new FindingFixStreamRequest(ProjectKey, Comparison.Finding.FindingId),
+                               _streamTokenSource.Token))
+            {
+                switch (item.EventType)
+                {
+                    case "Token":
+                        _fixMarkdown += item.MarkdownDelta;
+                        break;
+                    case "Error":
+                    case "Cancelled":
+                        _fixError = item.Message;
+                        break;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _fixError ??= "Generation stopped before completion.";
+        }
+        catch (Exception ex)
+        {
+            _fixError = ex.Message;
+        }
+        finally
+        {
+            _isFixBusy = false;
+        }
+    }
+
+    private Task CancelFixAsync()
+    {
+        _streamTokenSource?.Cancel();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _streamTokenSource?.Cancel();
+        _streamTokenSource?.Dispose();
+        _disposeTokenSource.Cancel();
+        _disposeTokenSource.Dispose();
+    }
 }
 

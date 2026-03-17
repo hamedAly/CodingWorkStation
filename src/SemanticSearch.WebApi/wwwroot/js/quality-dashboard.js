@@ -26,7 +26,17 @@ window.qualityDashboard = (function () {
         charts.set(canvasId, chart);
     }
 
+    function scrollAssistantOutput(elementId) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            return;
+        }
+
+        element.scrollTop = element.scrollHeight;
+    }
+
     return {
-        renderBreakdownChart
+        renderBreakdownChart,
+        scrollAssistantOutput
     };
 })();

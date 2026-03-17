@@ -10,6 +10,7 @@ public sealed class SemanticSearchOptions
     public IndexingOptions Indexing { get; set; } = new();
     public UiOptions Ui { get; set; } = new();
     public QualityOptions Quality { get; set; } = new();
+    public AssistantOptions Assistant { get; set; } = new();
 }
 
 public sealed class ChunkingOptions
@@ -49,4 +50,23 @@ public sealed class QualityOptions
     public double SemanticSimilarityThreshold { get; set; } = 0.9;
     public int MaxSemanticPairs { get; set; } = 500;
     public int MaxFindingsPerType { get; set; } = 100;
+}
+
+public sealed class AssistantOptions
+{
+    public string ModelPath { get; set; } = "models/llm/qwen2.5-coder-instruct.gguf";
+    public int ContextSize { get; set; } = 8192;
+    public int MaxTokens { get; set; } = 768;
+    public int CpuThreads { get; set; } = Math.Max(1, Environment.ProcessorCount / 2);
+    public int GpuLayerCount { get; set; }
+    public string[] AntiPrompts { get; set; } = ["User:", "System:"];
+    public int MaxDuplicateSnippetCharacters { get; set; } = 12000;
+    public float Temperature { get; set; } = 0.2f;
+    public AssistantStartupMode StartupMode { get; set; } = AssistantStartupMode.MarkUnavailable;
+}
+
+public enum AssistantStartupMode
+{
+    FailFast = 0,
+    MarkUnavailable = 1
 }

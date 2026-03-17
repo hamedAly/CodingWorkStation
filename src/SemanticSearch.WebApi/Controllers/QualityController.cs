@@ -1,9 +1,13 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using SemanticSearch.Application.Common.Interfaces;
+using SemanticSearch.Application.Quality.Assistant.Models;
+using SemanticSearch.Application.Quality.Assistant.Queries;
 using SemanticSearch.Application.Quality.Commands;
 using SemanticSearch.Application.Quality.Models;
 using SemanticSearch.Application.Quality.Queries;
 using SemanticSearch.WebApi.Contracts.Quality;
+using SemanticSearch.WebApi.Services;
 
 namespace SemanticSearch.WebApi.Controllers;
 
@@ -12,10 +16,58 @@ namespace SemanticSearch.WebApi.Controllers;
 public sealed class QualityController : ControllerBase
 {
     private readonly IMediator _mediator;
+    private readonly IQualityAssistantService _assistantService;
+    private readonly AiStreamEventWriter _aiStreamEventWriter;
 
-    public QualityController(IMediator mediator)
+    public QualityController(
+        IMediator mediator,
+        IQualityAssistantService assistantService,
+        AiStreamEventWriter aiStreamEventWriter)
     {
         _mediator = mediator;
+        _assistantService = assistantService;
+        _aiStreamEventWriter = aiStreamEventWriter;
+    }
+
+    [HttpGet("ai/status")]
+    [ProducesResponseType(typeof(AssistantStatusResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAssistantStatus(CancellationToken cancellationToken)
+    {
+        var status = await _mediator.Send(new GetAssistantStatusQuery(), cancellationToken);
+        return Ok(ToResponse(status));
+    }
+
+    [HttpPost("ai/project-plan/stream")]
+    [Produces("application/x-ndjson")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task StreamProjectPlan([FromBody] ProjectPlanStreamRequest request, CancellationToken cancellationToken)
+    {
+        var context = await _mediator.Send(new StreamProjectPlanQuery(request.ProjectKey, request.RunId), cancellationToken);
+        await _aiStreamEventWriter.WriteAsync(
+            Response,
+            _assistantService.StreamProjectPlanAsync(context, cancellationToken),
+            cancellationToken);
+    }
+
+    [HttpPost("ai/finding-fix/stream")]
+    [Produces("application/x-ndjson")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status413PayloadTooLarge)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status503ServiceUnavailable)]
+    public async Task StreamFindingFix([FromBody] FindingFixStreamRequest request, CancellationToken cancellationToken)
+    {
+        var context = await _mediator.Send(new StreamFindingFixQuery(request.ProjectKey, request.FindingId), cancellationToken);
+        await _aiStreamEventWriter.WriteAsync(
+            Response,
+            _assistantService.StreamFindingFixAsync(context, cancellationToken),
+            cancellationToken);
     }
 
     [HttpGet("{projectKey}")]
@@ -148,4 +200,11 @@ public sealed class QualityController : ControllerBase
                 finding.RightRegion.Snippet,
                 finding.RightRegion.HighlightedLineNumbers,
                 finding.RightRegion.Availability));
+
+    private static AssistantStatusResponse ToResponse(AssistantStatusModel model)
+        => new(
+            model.Status,
+            model.ModelLabel,
+            model.CheckedAtUtc,
+            model.FailureReason);
 }

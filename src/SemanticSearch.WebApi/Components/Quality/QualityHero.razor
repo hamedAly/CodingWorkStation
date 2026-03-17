@@ -1,38 +1,174 @@
+@implements IDisposable
+@inject WorkspaceApiClient WorkspaceApiClient
+
 @if (Summary is not null)
 {
-    <section class="quality-hero-grid">
-        <article class="card quality-grade-card">
-            <p class="eyebrow">Quality grade</p>
-            <div class="quality-grade-value grade-@Summary.QualityGrade.ToLowerInvariant()">@Summary.QualityGrade</div>
-            <p class="lede">Latest snapshot: @FormatDate(Summary.LastAnalyzedUtc)</p>
-        </article>
+    <section class="quality-hero-stack">
+        <section class="quality-hero-grid">
+            <article class="card quality-grade-card">
+                <p class="eyebrow">Quality grade</p>
+                <div class="quality-grade-value grade-@Summary.QualityGrade.ToLowerInvariant()">@Summary.QualityGrade</div>
+                <p class="lede">Latest snapshot: @FormatDate(Summary.LastAnalyzedUtc)</p>
+            </article>
 
-        <article class="card quality-metric-card">
-            <p class="eyebrow">Total LOC</p>
-            <strong>@Summary.TotalLinesOfCode.ToString("N0")</strong>
-        </article>
+            <article class="card quality-metric-card">
+                <p class="eyebrow">Total LOC</p>
+                <strong>@Summary.TotalLinesOfCode.ToString("N0")</strong>
+            </article>
 
-        <article class="card quality-metric-card">
-            <p class="eyebrow">Duplication</p>
-            <strong>@Summary.DuplicationPercent.ToString("0.##")%</strong>
-        </article>
+            <article class="card quality-metric-card">
+                <p class="eyebrow">Duplication</p>
+                <strong>@Summary.DuplicationPercent.ToString("0.##")%</strong>
+            </article>
 
-        <article class="card quality-metric-card">
-            <p class="eyebrow">Structural clones</p>
-            <strong>@Summary.StructuralFindingCount.ToString("N0")</strong>
-        </article>
+            <article class="card quality-metric-card">
+                <p class="eyebrow">Structural clones</p>
+                <strong>@Summary.StructuralFindingCount.ToString("N0")</strong>
+            </article>
 
-        <article class="card quality-metric-card">
-            <p class="eyebrow">Semantic clones</p>
-            <strong>@Summary.SemanticFindingCount.ToString("N0")</strong>
-        </article>
+            <article class="card quality-metric-card">
+                <p class="eyebrow">Semantic clones</p>
+                <strong>@Summary.SemanticFindingCount.ToString("N0")</strong>
+            </article>
+        </section>
+
+        <section class="card ai-hero-card">
+            <div class="section-head ai-hero-head">
+                <div>
+                    <p class="eyebrow">Actionable follow-up</p>
+                    <h2>Generate Tech Lead Action Plan</h2>
+                    <p>Use the latest quality snapshot to produce a local three-point remediation plan without leaving the dashboard.</p>
+                </div>
+                <button class="button" @onclick="GeneratePlanAsync" disabled="@_isBusy">Generate Tech Lead Action Plan</button>
+            </div>
+        </section>
+
+        <ProjectActionPlanPanel
+            IsOpen="@_isOpen"
+            IsBusy="@_isBusy"
+            Markdown="@_markdown"
+            ErrorMessage="@_errorMessage"
+            Status="@_assistantStatus"
+            OnGenerate="@GeneratePlanAsync"
+            OnCancel="@CancelAsync" />
     </section>
 }
 
 @code {
+    private readonly CancellationTokenSource _disposeTokenSource = new();
+    private CancellationTokenSource? _streamTokenSource;
+    private AssistantStatusResponse? _assistantStatus;
+    private string? _loadedRunId;
+    private string _markdown = string.Empty;
+    private string? _errorMessage;
+    private bool _isBusy;
+    private bool _isOpen;
+
     [Parameter, EditorRequired]
     public QualitySummaryResponse Summary { get; set; } = default!;
 
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_loadedRunId, Summary.RunId, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _loadedRunId = Summary.RunId;
+        _markdown = string.Empty;
+        _errorMessage = null;
+        _isBusy = false;
+        _isOpen = false;
+        await LoadAssistantStatusAsync();
+    }
+
+    private async Task LoadAssistantStatusAsync()
+    {
+        try
+        {
+            _assistantStatus = await WorkspaceApiClient.GetAssistantStatusAsync(_disposeTokenSource.Token);
+        }
+        catch (Exception ex)
+        {
+            _assistantStatus = new AssistantStatusResponse("Failed", "Local assistant", DateTime.UtcNow, ex.Message);
+        }
+    }
+
+    private async Task GeneratePlanAsync()
+    {
+        if (_isBusy)
+        {
+            return;
+        }
+
+        _isOpen = true;
+        _isBusy = true;
+        _markdown = string.Empty;
+        _errorMessage = null;
+        _streamTokenSource?.Cancel();
+        _streamTokenSource?.Dispose();
+        _streamTokenSource = CancellationTokenSource.CreateLinkedTokenSource(_disposeTokenSource.Token);
+
+        await LoadAssistantStatusAsync();
+        if (_assistantStatus is not null && !string.Equals(_assistantStatus.Status, "Ready", StringComparison.OrdinalIgnoreCase))
+        {
+            _errorMessage = _assistantStatus.FailureReason;
+            _isBusy = false;
+            return;
+        }
+
+        try
+        {
+            await foreach (var item in WorkspaceApiClient.StreamProjectPlanAsync(
+                               new ProjectPlanStreamRequest(Summary.ProjectKey, Summary.RunId),
+                               _streamTokenSource.Token))
+            {
+                ApplyStreamEvent(item);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _errorMessage ??= "Generation stopped before completion.";
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private Task CancelAsync()
+    {
+        _streamTokenSource?.Cancel();
+        return Task.CompletedTask;
+    }
+
     private static string FormatDate(DateTime? value)
         => value?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "Not analyzed yet";
+
+    private void ApplyStreamEvent(AiStreamEventResponse item)
+    {
+        switch (item.EventType)
+        {
+            case "Token":
+                _markdown += item.MarkdownDelta;
+                break;
+            case "Error":
+            case "Cancelled":
+                _errorMessage = item.Message;
+                break;
+        }
+    }
+
+    public void Dispose()
+    {
+        _streamTokenSource?.Cancel();
+        _streamTokenSource?.Dispose();
+        _disposeTokenSource.Cancel();
+        _disposeTokenSource.Dispose();
+    }
 }

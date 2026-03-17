@@ -31,10 +31,14 @@ builder.Services.AddInfrastructure(builder.Environment, semanticSearchOptions);
 builder.Services.AddControllers();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddScoped<WorkspaceApiClient>();
+builder.Services.AddSingleton<MarkdownRenderService>();
+builder.Services.AddScoped<AiStreamEventWriter>();
 
 var app = builder.Build();
 
 await app.Services.GetRequiredService<SqliteVectorStore>().InitializeAsync();
+await app.Services.GetRequiredService<SemanticSearch.Application.Common.Interfaces.IAiAssistantModelProvider>()
+    .EnsureInitializedAsync();
 
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseStaticFiles();
