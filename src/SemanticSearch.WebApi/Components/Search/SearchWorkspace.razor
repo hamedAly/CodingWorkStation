@@ -5,8 +5,9 @@
     <div class="section-head">
         <div>
             <h2>Search controls</h2>
-            <p>Choose a project key, search mode, and query.</p>
+            <p>Choose a project, switch between semantic retrieval and exact matching, then submit a focused query.</p>
         </div>
+        <span class="status-pill status-pill-neutral">@(_semanticMode ? "Semantic ranking" : "Exact matching")</span>
     </div>
 
     <div class="field-grid">
@@ -27,10 +28,10 @@
     </div>
 
     <div class="toggle-row">
-        <label class="toggle">
-            <input type="checkbox" @bind="_semanticMode" />
-            <span>@(_semanticMode ? "Semantic Search" : "Exact Search")</span>
-        </label>
+        <div class="segmented-control" role="tablist" aria-label="Search mode">
+            <button type="button" class="segment-button @(_semanticMode ? "segment-button-active" : string.Empty)" @onclick="SetSemanticMode">Semantic search</button>
+            <button type="button" class="segment-button @(!_semanticMode ? "segment-button-active" : string.Empty)" @onclick="SetExactMode">Exact search</button>
+        </div>
 
         @if (!_semanticMode)
         {
@@ -41,7 +42,10 @@
         }
     </div>
 
-    <button class="button" @onclick="RunSearchAsync" disabled="@_isBusy">@( _isBusy ? "Searching..." : "Run search")</button>
+    <div class="form-actions">
+        <p class="result-meta">Semantic mode uses embeddings for meaning-based retrieval. Exact mode is optimized for token-level confirmation and optional case sensitivity.</p>
+        <button class="button" @onclick="RunSearchAsync" disabled="@_isBusy">@( _isBusy ? "Searching..." : "Run search")</button>
+    </div>
 
     @if (!string.IsNullOrWhiteSpace(_errorMessage))
     {
@@ -66,6 +70,12 @@
         _projects = await WorkspaceApiClient.ListProjectsAsync() ?? [];
         _projectKey = _projects.FirstOrDefault()?.ProjectKey ?? string.Empty;
     }
+
+    private void SetSemanticMode()
+        => _semanticMode = true;
+
+    private void SetExactMode()
+        => _semanticMode = false;
 
     private async Task RunSearchAsync()
     {

@@ -4,6 +4,13 @@
             <h2>Results</h2>
             <p>Readable snippets, ranked within the selected project.</p>
         </div>
+        @if (Response is not null)
+        {
+            <div class="section-head-actions">
+                <span class="status-pill status-pill-neutral">@Response.Mode</span>
+                <span class="status-pill">@Response.Results.Count result(s)</span>
+            </div>
+        }
     </div>
 
     @if (Response is null)
@@ -21,10 +28,15 @@
             {
                 <article class="result-card">
                     <div class="result-head">
-                        <strong>@result.RelativeFilePath</strong>
-                        <span class="status-pill">@result.MatchType • @result.Score.ToString("0.000")</span>
+                        <div class="result-title">
+                            <strong class="mono">@result.RelativeFilePath</strong>
+                            <p class="result-meta">Lines @result.StartLine-@result.EndLine</p>
+                        </div>
+                        <div class="result-badges">
+                            <span class="status-pill status-pill-neutral">@result.MatchType</span>
+                            <span class="status-pill">Score @result.Score.ToString("0.000")</span>
+                        </div>
                     </div>
-                    <p class="result-meta">Lines @result.StartLine-@result.EndLine</p>
                     <pre class="snippet-block"><code>@result.Snippet</code></pre>
                 </article>
             }

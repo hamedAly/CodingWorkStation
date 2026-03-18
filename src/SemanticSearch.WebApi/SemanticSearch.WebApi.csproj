@@ -19,6 +19,11 @@
     <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode>
   </PropertyGroup>
 
+  <Target Name="TailwindBuild" BeforeTargets="Build" Condition="Exists('..\..\tools\tailwindcss.exe')">
+    <Exec Command="..\..\tools\tailwindcss.exe -i Styles\shell.input.css -o wwwroot\css\shell.css --minify"
+          WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
   <ItemGroup Condition="Exists('..\..\models')">
     <Content Include="..\..\models\**\*">
       <Link>models\%(RecursiveDir)%(Filename)%(Extension)</Link>

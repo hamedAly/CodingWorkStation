@@ -12,14 +12,30 @@
 </section>
 
 <section class="card stack">
-    <label class="field-label" for="project-selector">Project key</label>
-    <select id="project-selector" class="field-input" @onchange="HandleProjectChanged" disabled="@_isBusy">
-        <option value="">Select a project</option>
-        @foreach (var project in _projects)
-        {
-            <option value="@project.ProjectKey">@project.ProjectKey</option>
-        }
-    </select>
+    <div class="section-head">
+        <div>
+            <h2>Explorer context</h2>
+            <p>Switch repository context before drilling into folders and opening full file contents.</p>
+        </div>
+        <span class="status-pill status-pill-neutral">@(_selectedProjectKey ?? "No project selected")</span>
+    </div>
+
+    <div class="field-grid">
+        <div>
+            <label class="field-label" for="project-selector">Project key</label>
+            <select id="project-selector" class="field-input" @onchange="HandleProjectChanged" disabled="@_isBusy">
+                <option value="">Select a project</option>
+                @foreach (var project in _projects)
+                {
+                    <option value="@project.ProjectKey">@project.ProjectKey</option>
+                }
+            </select>
+        </div>
+        <div>
+            <p class="field-label">Tree availability</p>
+            <p class="lede">@BuildTreeSummary()</p>
+        </div>
+    </div>
 
     @if (!string.IsNullOrWhiteSpace(_errorMessage))
     {
@@ -118,5 +134,25 @@
             _selectedFileContent = null;
             _fileErrorMessage = ex.Message;
         }
+    }
+
+    private string BuildTreeSummary()
+    {
+        if (_isBusy)
+        {
+            return "Loading indexed project structure.";
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            return "Pick a project to load its indexed folders and files.";
+        }
+
+        if (_treeNodes.Count == 0)
+        {
+            return "No indexed nodes are available for the selected project yet.";
+        }
+
+        return $"{_treeNodes.Count} root node(s) ready for browsing.";
     }
 }

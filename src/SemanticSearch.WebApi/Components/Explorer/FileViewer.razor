@@ -4,6 +4,10 @@
             <h2>File viewer</h2>
             <p>Open full file contents from the explorer.</p>
         </div>
+        @if (!string.IsNullOrWhiteSpace(Content))
+        {
+            <span class="status-pill status-pill-neutral">@LineCount line(s)</span>
+        }
     </div>
 
     @if (!string.IsNullOrWhiteSpace(ErrorMessage))
@@ -30,4 +34,8 @@
 
     [Parameter]
     public string? ErrorMessage { get; set; }
+
+    private int LineCount => string.IsNullOrWhiteSpace(Content)
+        ? 0
+        : Content.Replace("\r", string.Empty).Split('\n').Length;
 }

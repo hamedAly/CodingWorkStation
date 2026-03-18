@@ -1,11 +1,20 @@
 @if (Node.NodeType == "File")
 {
-    <button class="tree-file" @onclick="() => OnFileSelected.InvokeAsync(Node.RelativeFilePath!)">@Node.Name</button>
+    <button class="tree-file" @onclick="() => OnFileSelected.InvokeAsync(Node.RelativeFilePath!)" title="@Node.RelativeFilePath">
+        <span class="tree-file-name">@Node.Name</span>
+        @if (!string.IsNullOrWhiteSpace(Node.RelativeFilePath))
+        {
+            <span class="tree-file-path">@Node.RelativeFilePath</span>
+        }
+    </button>
 }
 else
 {
     <details class="tree-branch">
-        <summary>@Node.Name</summary>
+        <summary>
+            <span class="tree-branch-name">@Node.Name</span>
+            <span class="tree-branch-badge">@Node.Children.Count item(s)</span>
+        </summary>
         <div class="tree-children">
             @foreach (var child in Node.Children)
             {

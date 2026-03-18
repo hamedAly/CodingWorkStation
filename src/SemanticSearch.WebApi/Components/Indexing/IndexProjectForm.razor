@@ -6,8 +6,9 @@
     <div class="section-head">
         <div>
             <h2>Queue full indexing</h2>
-            <p>Provide an absolute project path and a unique project key.</p>
+            <p>Register a repository with an absolute local path and a stable project key used across search, quality, and explorer workflows.</p>
         </div>
+        <span class="status-pill status-pill-neutral">Absolute local path</span>
     </div>
 
     <div class="field-grid">
@@ -23,7 +24,10 @@
         </div>
     </div>
 
-    <button class="button" type="submit" disabled="@IsBusy">@(IsBusy ? "Queueing..." : "Start indexing")</button>
+    <div class="form-actions">
+        <p class="result-meta">Use concise, permanent keys. They become the lookup handle for dashboard, search, explorer, and quality pages.</p>
+        <button class="button" type="submit" disabled="@IsBusy">@(IsBusy ? "Queueing..." : "Start indexing")</button>
+    </div>
 </EditForm>
 
 @code {

@@ -1,10 +1,16 @@
 <article class="status-card">
     <div class="status-card-head">
         <div class="status-title">
-            <strong>@Project.ProjectKey</strong>
-            <p class="result-meta">@(Project.RunId is null ? "No active run" : $"Run {Project.RunId[..Math.Min(8, Project.RunId.Length)]}")</p>
+            <div class="status-title-row">
+                <strong>@Project.ProjectKey</strong>
+                <span class="status-pill @Project.Status.ToLowerInvariant()">@Project.Status</span>
+            </div>
+            <p class="result-meta">@(Project.RunId is null ? "No active run recorded yet" : $"Latest run {Project.RunId[..Math.Min(8, Project.RunId.Length)]}")</p>
         </div>
-        <span class="status-pill @Project.Status.ToLowerInvariant()">@Project.Status</span>
+        <div class="status-card-highlight">
+            <span class="summary-label">Completion</span>
+            <strong>@Project.ProgressPercent.ToString("0.#")%</strong>
+        </div>
     </div>
 
     <dl class="metric-list project-metrics">

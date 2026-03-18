@@ -3,13 +3,53 @@
 @inject WorkspaceApiClient WorkspaceApiClient
 
 <section class="dashboard-stack">
+    <section class="card dashboard-overview-card">
+        <div class="section-head section-head-wide">
+            <div>
+                <p class="eyebrow">Portfolio health</p>
+                <h2>Workspace operations</h2>
+                <p>Monitor indexed coverage, queue pressure, and repository volume from a single control surface.</p>
+            </div>
+            <div class="section-head-actions">
+                <span class="status-pill status-pill-neutral">Refresh every @Options.Value.Ui.DashboardPollSeconds s</span>
+                <span class="section-note">Last sync @FormatUpdatedAt(_lastUpdatedUtc)</span>
+            </div>
+        </div>
+
+        <div class="dashboard-summary-grid">
+            <article class="summary-metric">
+                <span class="summary-label">Workspaces</span>
+                <strong class="summary-value">@_projects.Count</strong>
+                <span class="summary-detail">Tracked repositories in the local catalog</span>
+            </article>
+            <article class="summary-metric">
+                <span class="summary-label">Active jobs</span>
+                <strong class="summary-value">@ActiveRunCount</strong>
+                <span class="summary-detail">Indexing or refresh operations currently moving</span>
+            </article>
+            <article class="summary-metric">
+                <span class="summary-label">Indexed files</span>
+                <strong class="summary-value">@TotalFileCount.ToString("N0")</strong>
+                <span class="summary-detail">Files available to search, browse, and analyze</span>
+            </article>
+            <article class="summary-metric">
+                <span class="summary-label">Indexed segments</span>
+                <strong class="summary-value">@TotalSegmentCount.ToString("N0")</strong>
+                <span class="summary-detail">Embeddable code segments across the portfolio</span>
+            </article>
+        </div>
+    </section>
+
     <section class="card stack dashboard-controls">
         <div class="section-head">
             <div>
                 <h2>Active workspaces</h2>
-                <p>Refreshes automatically while this page is open.</p>
+                <p>Refreshes automatically while this page is open. Use single-file refresh for targeted updates without reindexing the whole repository.</p>
             </div>
-            <button class="button button-secondary" @onclick="LoadProjectsAsync" disabled="@_isBusy">Refresh now</button>
+            <div class="section-head-actions">
+                <span class="status-pill status-pill-neutral">Single-file refresh</span>
+                <button class="button button-secondary" @onclick="LoadProjectsAsync" disabled="@_isBusy">Refresh now</button>
+            </div>
         </div>
 
         <div class="refresh-grid">
@@ -73,6 +113,11 @@
     private bool _isBusy;
     private PeriodicTimer? _timer;
     private Task? _pollingTask;
+    private DateTime? _lastUpdatedUtc;
+
+    private int ActiveRunCount => _projects.Count(project => project.IndexingInProgress);
+    private int TotalFileCount => _projects.Sum(project => project.TotalFiles);
+    private int TotalSegmentCount => _projects.Sum(project => project.TotalSegments);
 
     protected override async Task OnInitializedAsync()
     {
@@ -105,6 +150,7 @@
         {
             _projects = await WorkspaceApiClient.ListProjectsAsync() ?? [];
             _refreshProjectKey ??= _projects.FirstOrDefault()?.ProjectKey;
+            _lastUpdatedUtc = DateTime.UtcNow;
         }
         catch (Exception ex)
         {
@@ -208,4 +254,7 @@
 
         _disposeTokenSource.Dispose();
     }
+
+    private static string FormatUpdatedAt(DateTime? value)
+        => value?.ToLocalTime().ToString("MMM d, yyyy h:mm tt") ?? "Pending";
 }

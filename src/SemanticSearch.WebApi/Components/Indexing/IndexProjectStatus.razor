@@ -4,6 +4,10 @@
             <h2>Latest request result</h2>
             <p>Track the active run, its current progress, and pause or resume long indexing jobs.</p>
         </div>
+        @if (IsRefreshing)
+        {
+            <span class="status-pill status-pill-live">Refreshing</span>
+        }
     </div>
 
     @if (Response is not null || Status is not null)
@@ -19,7 +23,11 @@
             </div>
             <div>
                 <dt>Status</dt>
-                <dd>@(Status?.Status ?? Response?.Status)</dd>
+                <dd>
+                    <span class="status-pill @((Status?.Status ?? Response?.Status ?? string.Empty).ToLowerInvariant())">
+                        @(Status?.Status ?? Response?.Status)
+                    </span>
+                </dd>
             </div>
             @if (Status is not null)
             {

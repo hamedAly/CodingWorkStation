@@ -1,0 +1,59 @@
+@namespace SemanticSearch.WebApi.Components.Layout
+
+<header class="topbar-shell">
+    <div class="topbar-leading">
+        <button class="topbar-mobile-toggle lg:hidden"
+            @onclick="OnOpenMobileSidebar"
+            aria-label="Open navigation">
+            @Icons.Bars3
+        </button>
+
+        <div class="topbar-context">
+            <p class="topbar-kicker">Enterprise workspace</p>
+            <nav aria-label="Breadcrumb" class="topbar-breadcrumbs">
+                <ol class="topbar-breadcrumb-list">
+                    @for (int i = 0; i < _breadcrumbs.Count; i++)
+                    {
+                        var segment = _breadcrumbs[i];
+                        @if (i > 0)
+                        {
+                            <li class="topbar-breadcrumb-separator">@Icons.ChevronRight</li>
+                        }
+
+                        <li class="topbar-breadcrumb-item">
+                            @if (segment.IsCurrent)
+                            {
+                                <span class="topbar-breadcrumb-current">@segment.Label</span>
+                            }
+                            else
+                            {
+                                <a href="@segment.Href" class="topbar-breadcrumb-link">@segment.Label</a>
+                            }
+                        </li>
+                    }
+                </ol>
+            </nav>
+        </div>
+    </div>
+
+    <div class="topbar-actions">
+        <div class="topbar-command hidden sm:flex">
+            <span class="topbar-command-icon">@Icons.Search</span>
+            <div class="topbar-command-copy">
+                <span class="topbar-command-label">Command palette</span>
+                <span class="topbar-command-hint">Search projects, files, and actions</span>
+            </div>
+            <kbd class="topbar-shortcut">Ctrl+K</kbd>
+        </div>
+
+        <div class="topbar-status">
+            <span class="topbar-status-label">Runtime</span>
+            <strong>Interactive Server</strong>
+        </div>
+
+        <button class="topbar-profile"
+                aria-label="User profile">
+            @Icons.UserCircle
+        </button>
+    </div>
+</header>

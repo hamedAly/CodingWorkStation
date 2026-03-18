@@ -48,6 +48,12 @@ Desktop.ini
 *.temp
 *.swp
 *~
+
+# Tailwind standalone CLI binary
+tools/
+
+# Tailwind CSS build output
+src/SemanticSearch.WebApi/wwwroot/css/shell.css
 publish/
 coverage/
 TestResults/
