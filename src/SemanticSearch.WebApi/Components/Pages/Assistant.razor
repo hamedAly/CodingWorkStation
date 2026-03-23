@@ -1,129 +1,18 @@
 @page "/assistant"
-@inject WorkspaceApiClient WorkspaceApiClient
-@implements IDisposable
+@inject NavigationManager NavigationManager
 
-<PageTitle>AI Assistant</PageTitle>
+<PageTitle>Dashboard</PageTitle>
 
-<section class="page-header">
-    <div>
-        <p class="eyebrow">AI Tech Lead</p>
-        <h1>Local model operations</h1>
-        <p class="lede">Review assistant readiness, confirm available repositories, and jump into the workflows that generate action plans and duplicate-fix guidance.</p>
-    </div>
-</section>
-
-<section class="dashboard-stack assistant-stack">
-    <section class="card assistant-hero-card">
-        <div class="section-head section-head-wide">
-            <div>
-                <p class="eyebrow">Assistant status</p>
-                <h2>On-box AI remediation workspace</h2>
-                <p>Use the local model to convert duplication analysis into project-level plans and finding-specific refactor proposals.</p>
-            </div>
-            <div class="section-head-actions">
-                <span class="status-pill @BuildAssistantStatusClass()">@(_assistantStatus?.Status ?? "Checking")</span>
-                <span class="section-note">@BuildCheckedAtLabel()</span>
-            </div>
-        </div>
-
-        <div class="dashboard-summary-grid">
-            <article class="summary-metric">
-                <span class="summary-label">Runtime status</span>
-                <strong class="summary-value">@(_assistantStatus?.Status ?? "Checking")</strong>
-                <span class="summary-detail">@(_assistantStatus?.FailureReason ?? "The model can be invoked from the quality workspace when a fresh snapshot exists.")</span>
-            </article>
-            <article class="summary-metric">
-                <span class="summary-label">Model profile</span>
-                <strong class="summary-value">@(_assistantStatus?.ModelLabel ?? "Initializing")</strong>
-                <span class="summary-detail">Local model identity reported by the quality assistant service.</span>
-            </article>
-            <article class="summary-metric">
-                <span class="summary-label">Indexed projects</span>
-                <strong class="summary-value">@_projects.Count</strong>
-                <span class="summary-detail">@BuildProjectSummary()</span>
-            </article>
-            <article class="summary-metric">
-                <span class="summary-label">Next step</span>
-                <strong class="summary-value">Quality workspace</strong>
-                <span class="summary-detail">Generate a snapshot, open a finding, and request an action plan or duplicate fix.</span>
-            </article>
-        </div>
-    </section>
-
-    @if (!string.IsNullOrWhiteSpace(_errorMessage))
-    {
-        <section class="card">
-            <p class="banner banner-error">@_errorMessage</p>
-        </section>
-    }
-
-    <section class="assistant-grid">
-        <article class="card assistant-workflow-card">
-            <p class="eyebrow">Project-level guidance</p>
-            <h2>Tech lead action plan</h2>
-            <p class="lede">Run a fresh quality snapshot, then ask the assistant to synthesize a three-part remediation plan for the selected project scope.</p>
-            <a class="button" href="/quality">Open quality workspace</a>
-        </article>
-
-        <article class="card assistant-workflow-card">
-            <p class="eyebrow">Finding-level guidance</p>
-            <h2>Duplicate consolidation proposal</h2>
-            <p class="lede">Open a duplicate comparison in the quality dashboard and stream a local refactor proposal with shared extraction guidance.</p>
-            <a class="button button-secondary" href="/quality">Review duplicate findings</a>
-        </article>
-
-        <article class="card assistant-workflow-card">
-            <p class="eyebrow">Repository coverage</p>
-            <h2>Available repositories</h2>
-            <p class="lede">@BuildRepositoryListLabel()</p>
-            <a class="button button-secondary" href="/indexing">Manage indexed repositories</a>
-        </article>
-    </section>
+<section class="card">
+    <p class="empty-state">AI assistant controls moved to the dashboard. Redirecting to <a href="/dashboard">Dashboard</a>.</p>
 </section>
 
 @code {
-    private readonly CancellationTokenSource _disposeTokenSource = new();
-    private IReadOnlyList<ProjectWorkspaceSummaryResponse> _projects = [];
-    private AssistantStatusResponse? _assistantStatus;
-    private string? _errorMessage;
-
-    protected override async Task OnInitializedAsync()
+    protected override void OnAfterRender(bool firstRender)
     {
-        try
+        if (firstRender)
         {
-            _projects = await WorkspaceApiClient.ListProjectsAsync(_disposeTokenSource.Token) ?? [];
-            _assistantStatus = await WorkspaceApiClient.GetAssistantStatusAsync(_disposeTokenSource.Token);
+            NavigationManager.NavigateTo("/dashboard", replace: true);
         }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-    }
-
-    private string BuildAssistantStatusClass()
-        => (_assistantStatus?.Status ?? string.Empty).ToLowerInvariant() switch
-        {
-            "ready" => string.Empty,
-            "failed" => "failed",
-            _ => "paused"
-        };
-
-    private string BuildCheckedAtLabel()
-        => _assistantStatus?.CheckedAtUtc.ToLocalTime().ToString("MMM d, yyyy h:mm tt") ?? "Waiting for service status";
-
-    private string BuildProjectSummary()
-        => _projects.Count == 0
-            ? "Index a repository to unlock assistant workflows."
-            : "Projects currently available for snapshot-driven guidance.";
-
-    private string BuildRepositoryListLabel()
-        => _projects.Count == 0
-            ? "No indexed repositories are ready yet."
-            : string.Join(", ", _projects.Take(3).Select(project => project.ProjectKey)) + (_projects.Count > 3 ? "..." : string.Empty);
-
-    public void Dispose()
-    {
-        _disposeTokenSource.Cancel();
-        _disposeTokenSource.Dispose();
     }
 }

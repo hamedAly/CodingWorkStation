@@ -1,0 +1,34 @@
+@page "/workspace"
+@page "/workspace/{View}"
+@inject NavigationManager NavigationManager
+
+<PageTitle>Workspace</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Developer Workspace</p>
+        <h1>Indexing, search, and explorer</h1>
+        <p class="lede">Register repositories, run retrieval, and inspect indexed files from one multi-tab workspace.</p>
+    </div>
+</section>
+
+<DeveloperWorkspace InitialTab="@ResolvedTab" />
+
+@code {
+    [Parameter]
+    public string? View { get; set; }
+
+    private string ResolvedTab
+        => CurrentPath switch
+        {
+            "workspace/search" => "search",
+            "workspace/explorer" => "explorer",
+            _ => "indexing"
+        };
+
+    private string CurrentPath
+        => NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
+            .Split('?', '#')[0]
+            .Trim('/')
+            .ToLowerInvariant();
+}

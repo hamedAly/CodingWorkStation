@@ -1,0 +1,29 @@
+@page "/architecture"
+@page "/architecture/{View}"
+@using Microsoft.AspNetCore.Components.Routing
+
+<PageTitle>Visual Architecture</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Visual Architecture</p>
+        <h1>Dependency graph, heatmap, and data model</h1>
+        <p class="lede">Inspect project coupling, duplication hotspots, and the live SQLite schema from the same workspace.</p>
+    </div>
+</section>
+
+<QualityDashboard InitialTab="@ResolvedTab" />
+
+@code {
+    [Parameter]
+    public string? View { get; set; }
+
+    private string ResolvedTab
+        => View?.ToLowerInvariant() switch
+        {
+            "dependency-graph" => "graph",
+            "heatmap" => "heatmap",
+            "data-model" => "er",
+            _ => "graph"
+        };
+}

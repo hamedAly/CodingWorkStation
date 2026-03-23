@@ -1,0 +1,263 @@
+openapi: 3.0.3
+info:
+  title: Architecture & Visualization API
+  description: >
+    Endpoints for dependency graph analysis, duplication heatmap,
+    and ER diagram generation — extending the Code Quality Dashboard.
+  version: 1.0.0
+
+paths:
+  /api/architecture/{projectKey}/dependency-graph:
+    get:
+      operationId: getDependencyGraph
+      summary: Retrieve the dependency graph for a project
+      description: >
+        Returns the most recent dependency graph (nodes and edges)
+        for the given project. Supports optional filtering by namespace
+        or file path to reduce the graph scope.
+      tags: [Architecture]
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to nodes within this namespace (prefix match)
+        - name: filePath
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter to nodes declared in this file (relative path)
+      responses:
+        '200':
+          description: Dependency graph retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyGraphResponse'
+        '404':
+          description: No dependency analysis found for this project
+
+    post:
+      operationId: runDependencyAnalysis
+      summary: Run dependency analysis for a project
+      description: >
+        Triggers a Roslyn-based dependency graph extraction for the given project.
+        Parses all indexed C# source files and builds a directed graph of
+        class/method relationships. Replaces any previous analysis results.
+      tags: [Architecture]
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+      responses:
+        '200':
+          description: Dependency analysis completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DependencyAnalysisRunResponse'
+        '404':
+          description: Project not found
+        '409':
+          description: Analysis already in progress for this project
+
+  /api/architecture/{projectKey}/heatmap:
+    get:
+      operationId: getFileHeatmap
+      summary: Retrieve the duplication heatmap for a project
+      description: >
+        Returns per-file duplication density data for all source files
+        in the project. Data is derived from the most recent quality analysis
+        run — no additional analysis is triggered.
+      tags: [Architecture]
+      parameters:
+        - $ref: '#/components/parameters/ProjectKey'
+      responses:
+        '200':
+          description: Heatmap data retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileHeatmapResponse'
+        '404':
+          description: No quality analysis found for this project
+
+  /api/architecture/er-diagram:
+    get:
+      operationId: getErDiagram
+      summary: Retrieve the auto-generated ER diagram
+      description: >
+        Introspects the application's SQLite schema (tables, columns,
+        foreign keys) and domain entity classes to produce a Mermaid.js
+        compatible ER diagram definition string.
+      tags: [Architecture]
+      responses:
+        '200':
+          description: ER diagram generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErDiagramResponse'
+
+components:
+  parameters:
+    ProjectKey:
+      name: projectKey
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique identifier for the indexed project
+
+  schemas:
+    DependencyGraphResponse:
+      type: object
+      required: [projectKey, runId, analyzedUtc, totalNodes, totalEdges, nodes, edges]
+      properties:
+        projectKey:
+          type: string
+        runId:
+          type: string
+        analyzedUtc:
+          type: string
+          format: date-time
+        totalNodes:
+          type: integer
+        totalEdges:
+          type: integer
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/DependencyNodeResponse'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/DependencyEdgeResponse'
+
+    DependencyNodeResponse:
+      type: object
+      required: [nodeId, name, fullName, kind, namespace, filePath, startLine]
+      properties:
+        nodeId:
+          type: string
+        name:
+          type: string
+          description: Short name (class or method name)
+        fullName:
+          type: string
+          description: Fully qualified name (Namespace.Class or Namespace.Class.Method)
+        kind:
+          type: string
+          enum: [Class, Method]
+        namespace:
+          type: string
+        filePath:
+          type: string
+          description: Relative file path within the project
+        startLine:
+          type: integer
+        parentNodeId:
+          type: string
+          nullable: true
+          description: For methods — the containing class node ID
+
+    DependencyEdgeResponse:
+      type: object
+      required: [edgeId, sourceNodeId, targetNodeId, relationshipType]
+      properties:
+        edgeId:
+          type: string
+        sourceNodeId:
+          type: string
+          description: Caller / referencing node
+        targetNodeId:
+          type: string
+          description: Callee / referenced node
+        relationshipType:
+          type: string
+          enum: [Invocation, Inheritance, TypeReference, Construction]
+        sourceNodeName:
+          type: string
+          description: Display name of source node (denormalized for UI convenience)
+        targetNodeName:
+          type: string
+          description: Display name of target node (denormalized for UI convenience)
+
+    DependencyAnalysisRunResponse:
+      type: object
+      required: [runId, projectKey, status, requestedUtc, totalFilesScanned, totalNodesFound, totalEdgesFound]
+      properties:
+        runId:
+          type: string
+        projectKey:
+          type: string
+        status:
+          type: string
+          enum: [Queued, Running, Completed, Failed]
+        requestedUtc:
+          type: string
+          format: date-time
+        startedUtc:
+          type: string
+          format: date-time
+          nullable: true
+        completedUtc:
+          type: string
+          format: date-time
+          nullable: true
+        totalFilesScanned:
+          type: integer
+        totalNodesFound:
+          type: integer
+        totalEdgesFound:
+          type: integer
+        failureReason:
+          type: string
+          nullable: true
+
+    FileHeatmapResponse:
+      type: object
+      required: [projectKey, totalFiles, entries]
+      properties:
+        projectKey:
+          type: string
+        totalFiles:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileHeatmapEntryResponse'
+
+    FileHeatmapEntryResponse:
+      type: object
+      required: [relativeFilePath, fileName, totalLines, structuralDuplicateCount, semanticDuplicateCount, duplicationDensity]
+      properties:
+        relativeFilePath:
+          type: string
+        fileName:
+          type: string
+        totalLines:
+          type: integer
+        structuralDuplicateCount:
+          type: integer
+        semanticDuplicateCount:
+          type: integer
+        duplicationDensity:
+          type: number
+          format: double
+          description: "(structuralDuplicateCount + semanticDuplicateCount) / totalLines — 0.0 for clean files"
+
+    ErDiagramResponse:
+      type: object
+      required: [mermaidMarkup, entityCount, relationshipCount]
+      properties:
+        mermaidMarkup:
+          type: string
+          description: >
+            Complete Mermaid.js erDiagram definition string.
+            Example: "erDiagram\n  USER ||--o{ ORDER : places\n  ..."
+        entityCount:
+          type: integer
+        relationshipCount:
+          type: integer

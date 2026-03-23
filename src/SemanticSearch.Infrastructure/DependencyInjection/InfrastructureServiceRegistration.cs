@@ -4,6 +4,7 @@ using SemanticSearch.Application.Common;
 using SemanticSearch.Application.Common.Interfaces;
 using SemanticSearch.Application.Quality;
 using SemanticSearch.Domain.Interfaces;
+using SemanticSearch.Infrastructure.Architecture;
 using SemanticSearch.Infrastructure.Embedding;
 using SemanticSearch.Infrastructure.FileSystem;
 using SemanticSearch.Infrastructure.Indexing;
@@ -58,6 +59,12 @@ public static class InfrastructureServiceRegistration
         services.AddSingleton(indexingChannel);
         services.AddSingleton<IIndexingQueue>(indexingChannel);
         services.AddHostedService<IndexingWorker>();
+
+        // Architecture / Visual Analysis
+        services.AddSingleton<IDependencyRepository>(sp => sp.GetRequiredService<SqliteVectorStore>());
+        services.AddSingleton<IDependencyExtractor, RoslynDependencyExtractor>();
+        services.AddSingleton<IHeatmapDataBuilder, HeatmapDataBuilder>();
+        services.AddSingleton<IErDiagramGenerator>(_ => new SqliteErDiagramGenerator(databasePath));
 
         return services;
     }

@@ -1,0 +1,106 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject WorkspaceApiClient WorkspaceApiClient
+
+<section class="card arch-panel">
+    <div class="section-head">
+        <div>
+            <h2>Duplication Heatmap</h2>
+            <p>Treemap of files colored by duplication density. Click a file to filter findings.</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="banner banner-error">@_errorMessage</p>
+    }
+
+    @if (_isBusy)
+    {
+        <p class="lede">Loading&hellip;</p>
+    }
+    else if (_heatmap is null || _heatmap.Entries.Count == 0)
+    {
+        <p class="empty-state">No heatmap data available. Run a quality snapshot first, then return here.</p>
+    }
+    else
+    {
+        <p class="lede">@_heatmap.TotalFiles files analyzed</p>
+        <div class="arch-heatmap-shell">
+            <canvas id="@_canvasId" class="arch-heatmap-canvas"></canvas>
+        </div>
+    }
+</section>
+
+@code {
+    private readonly string _canvasId = $"heatmap-{Guid.NewGuid():N}";
+    private readonly CancellationTokenSource _cts = new();
+
+    private DotNetObjectReference<FileHeatmapView>? _dotNetRef;
+    private FileHeatmapResponse? _heatmap;
+    private string? _errorMessage;
+    private bool _isBusy;
+    private bool _rendered;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = string.Empty;
+
+    [Parameter]
+    public EventCallback<string> OnFileSelected { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadHeatmapAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            _rendered = true;
+        }
+
+        if (_rendered && _heatmap is not null && _heatmap.Entries.Count > 0)
+        {
+            await JS.InvokeVoidAsync("architectureDashboard.renderHeatmap",
+                _canvasId, _heatmap.Entries, _dotNetRef);
+        }
+    }
+
+    private async Task LoadHeatmapAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ProjectKey)) return;
+        _isBusy = true;
+        _errorMessage = null;
+
+        try
+        {
+            _heatmap = await WorkspaceApiClient.GetFileHeatmapAsync(ProjectKey, _cts.Token);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnFileClicked(string relativeFilePath)
+    {
+        if (OnFileSelected.HasDelegate)
+            await OnFileSelected.InvokeAsync(relativeFilePath);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _cts.CancelAsync();
+        _cts.Dispose();
+        if (_rendered)
+            await JS.InvokeVoidAsync("architectureDashboard.destroyHeatmap", _canvasId);
+        _dotNetRef?.Dispose();
+    }
+}

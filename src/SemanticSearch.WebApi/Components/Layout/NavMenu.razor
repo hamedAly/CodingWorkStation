@@ -43,7 +43,7 @@
                     {
                         var navClass = $"sidebar-nav-link{(Collapsed ? " sidebar-nav-link-collapsed" : string.Empty)}";
                         <NavLink href="@item.Route"
-                                 Match="@(item.Route == "/" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
+                                 Match="@(item.Route is "/" or "/architecture" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
                                  class="@navClass"
                                  ActiveClass="sidebar-nav-link-active">
                             <span class="sidebar-nav-icon">@item.Icon</span>

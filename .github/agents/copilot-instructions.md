@@ -35,6 +35,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-15
 - SQLite with vector storage (file-based, absolute paths under IIS ContentRootPath) (001-local-semantic-search-api)
 - C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), Tailwind CSS 4.x (standalone CLI) (005-enterprise-app-shell)
 - N/A (UI-only feature; no database changes) (005-enterprise-app-shell)
+- C# 13 on .NET 10 + ASP.NET Core (Blazor Interactive Server), MediatR 14.1.0, FluentValidation 12.1.1, Microsoft.CodeAnalysis.CSharp 4.11.0, Microsoft.Data.Sqlite, Vis.js (new — interactive graph), Mermaid.js (new — ER diagram), chartjs-chart-treemap (new — heatmap plugin) (006-visual-architecture-analysis)
+- SQLite file database (existing) — new tables for dependency graph persistence (006-visual-architecture-analysis)
 
 - C# on .NET 8 (ASP.NET Core Web API) + ASP.NET Core, Entity Framework Core, MediatR, FluentValidation, Swagger/OpenAPI (001-report-context-api)
 
@@ -55,9 +57,9 @@ tests/
 C# on .NET 8 (ASP.NET Core Web API): Follow standard conventions
 
 ## Recent Changes
+- 006-visual-architecture-analysis: Added C# 13 on .NET 10 + ASP.NET Core (Blazor Interactive Server), MediatR 14.1.0, FluentValidation 12.1.1, Microsoft.CodeAnalysis.CSharp 4.11.0, Microsoft.Data.Sqlite, Vis.js (new — interactive graph), Mermaid.js (new — ER diagram), chartjs-chart-treemap (new — heatmap plugin)
 - 005-enterprise-app-shell: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), Tailwind CSS 4.x (standalone CLI)
 - 001-local-semantic-search-api: Added C# / .NET 10 + ASP.NET Core 10, Microsoft.ML.OnnxRuntime, Microsoft.ML.Tokenizers, SQLite (Microsoft.Data.Sqlite), MediatR, FluentValidation
-- 029-editor-spell-check: Added C# / .NET 8 (backend), TypeScript / React 18 (frontend) + HugeRTE v1.0.9 + @hugerte/hugerte-react v2.0.2, nspell (Hunspell-compatible JS spell checker), MediatR, FluentValidation, Entity Framework Core 9, React Query, Zustand, Axios
 
 
 <!-- MANUAL ADDITIONS START -->

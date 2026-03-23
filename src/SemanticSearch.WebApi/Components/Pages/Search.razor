@@ -1,13 +1,18 @@
 @page "/search"
+@inject NavigationManager NavigationManager
 
-<PageTitle>Search</PageTitle>
+<PageTitle>Workspace</PageTitle>
 
-<section class="page-header">
-    <div>
-        <p class="eyebrow">Search Workspace</p>
-        <h1>Semantic and exact code retrieval</h1>
-        <p class="lede">Search within one indexed project using natural language or literal matching.</p>
-    </div>
+<section class="card">
+    <p class="empty-state">Search moved into the unified workspace. Redirecting to <a href="/workspace/search">Workspace</a>.</p>
 </section>
 
-<SearchWorkspace />
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            NavigationManager.NavigateTo("/workspace/search", replace: true);
+        }
+    }
+}

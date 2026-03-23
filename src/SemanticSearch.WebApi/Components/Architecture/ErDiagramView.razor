@@ -1,0 +1,83 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject WorkspaceApiClient WorkspaceApiClient
+
+<section class="card arch-panel">
+    <div class="section-head">
+        <div>
+            <h2>Data Model</h2>
+            <p>Auto-generated entity relationship diagram from the live SQLite schema. Use the mouse wheel to zoom.</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="banner banner-error">@_errorMessage</p>
+    }
+
+    @if (_isBusy)
+    {
+        <p class="lede">Loading&hellip;</p>
+    }
+    else if (_diagram is null)
+    {
+        <p class="empty-state">Unable to generate ER diagram.</p>
+    }
+    else
+    {
+        <p class="lede">@_diagram.EntityCount entities &middot; @_diagram.RelationshipCount relationships</p>
+        <div id="@_containerId" class="arch-er-container"></div>
+    }
+</section>
+
+@code {
+    private readonly string _containerId = $"er-diag-{Guid.NewGuid():N}";
+    private readonly CancellationTokenSource _cts = new();
+
+    private ErDiagramResponse? _diagram;
+    private string? _errorMessage;
+    private bool _isBusy;
+    private bool _rendered;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDiagramAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _rendered = true;
+
+        if (_rendered && _diagram is not null)
+        {
+            await JS.InvokeVoidAsync("architectureDashboard.renderErDiagram",
+                _containerId, _diagram.MermaidMarkup);
+        }
+    }
+
+    private async Task LoadDiagramAsync()
+    {
+        _isBusy = true;
+        _errorMessage = null;
+
+        try
+        {
+            _diagram = await WorkspaceApiClient.GetErDiagramAsync(_cts.Token);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _cts.CancelAsync();
+        _cts.Dispose();
+    }
+}

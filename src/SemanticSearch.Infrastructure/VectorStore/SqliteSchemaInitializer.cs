@@ -126,5 +126,50 @@ public static class SqliteSchemaInitializer
         );
         CREATE INDEX IF NOT EXISTS IX_DuplicationFindings_ProjectKey ON DuplicationFindings(ProjectKey);
         CREATE INDEX IF NOT EXISTS IX_DuplicationFindings_ProjectKey_RunId ON DuplicationFindings(ProjectKey, RunId);
+
+        CREATE TABLE IF NOT EXISTS DependencyAnalysisRuns (
+            RunId               TEXT PRIMARY KEY,
+            ProjectKey          TEXT NOT NULL,
+            Status              TEXT NOT NULL DEFAULT 'Queued',
+            RequestedUtc        TEXT NOT NULL,
+            StartedUtc          TEXT NULL,
+            CompletedUtc        TEXT NULL,
+            TotalFilesScanned   INTEGER NOT NULL DEFAULT 0,
+            TotalNodesFound     INTEGER NOT NULL DEFAULT 0,
+            TotalEdgesFound     INTEGER NOT NULL DEFAULT 0,
+            FailureReason       TEXT NULL,
+            FOREIGN KEY (ProjectKey) REFERENCES ProjectWorkspaces(ProjectKey)
+        );
+        CREATE INDEX IF NOT EXISTS IX_DependencyAnalysisRuns_ProjectKey ON DependencyAnalysisRuns(ProjectKey);
+
+        CREATE TABLE IF NOT EXISTS DependencyNodes (
+            NodeId          TEXT PRIMARY KEY,
+            ProjectKey      TEXT NOT NULL,
+            RunId           TEXT NOT NULL,
+            Name            TEXT NOT NULL,
+            FullName        TEXT NOT NULL,
+            Kind            TEXT NOT NULL,
+            Namespace       TEXT NOT NULL,
+            FilePath        TEXT NOT NULL,
+            StartLine       INTEGER NOT NULL,
+            ParentNodeId    TEXT NULL,
+            FOREIGN KEY (ProjectKey) REFERENCES ProjectWorkspaces(ProjectKey),
+            FOREIGN KEY (RunId) REFERENCES DependencyAnalysisRuns(RunId)
+        );
+        CREATE INDEX IF NOT EXISTS IX_DependencyNodes_ProjectKey ON DependencyNodes(ProjectKey);
+        CREATE INDEX IF NOT EXISTS IX_DependencyNodes_RunId ON DependencyNodes(RunId);
+
+        CREATE TABLE IF NOT EXISTS DependencyEdges (
+            EdgeId              TEXT PRIMARY KEY,
+            ProjectKey          TEXT NOT NULL,
+            RunId               TEXT NOT NULL,
+            SourceNodeId        TEXT NOT NULL,
+            TargetNodeId        TEXT NOT NULL,
+            RelationshipType    TEXT NOT NULL,
+            FOREIGN KEY (ProjectKey) REFERENCES ProjectWorkspaces(ProjectKey),
+            FOREIGN KEY (RunId) REFERENCES DependencyAnalysisRuns(RunId)
+        );
+        CREATE INDEX IF NOT EXISTS IX_DependencyEdges_ProjectKey ON DependencyEdges(ProjectKey);
+        CREATE INDEX IF NOT EXISTS IX_DependencyEdges_RunId ON DependencyEdges(RunId);
         """;
 }

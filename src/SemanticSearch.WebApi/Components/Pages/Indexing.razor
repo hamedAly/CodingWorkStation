@@ -1,155 +1,18 @@
 @page "/indexing"
-@inject WorkspaceApiClient WorkspaceApiClient
-@implements IAsyncDisposable
+@inject NavigationManager NavigationManager
 
-<PageTitle>Indexing</PageTitle>
+<PageTitle>Workspace</PageTitle>
 
-<section class="page-header">
-    <div>
-        <p class="eyebrow">Indexing Panel</p>
-        <h1>Register and refresh local codebases</h1>
-        <p class="lede">Queue a full indexing run for a local project path and monitor the immediate request result.</p>
-    </div>
-</section>
-
-<section class="stack">
-    <IndexProjectForm IsBusy="_isSubmitting" OnSubmit="HandleSubmitAsync" />
-    <IndexProjectStatus
-        Response="@_response"
-        Status="@_status"
-        Message="@_message"
-        ErrorMessage="@_errorMessage"
-        IsRefreshing="@_isRefreshing"
-        OnPauseRequested="HandlePauseAsync"
-        OnResumeRequested="HandleResumeAsync" />
+<section class="card">
+    <p class="empty-state">Indexing moved into the unified workspace. Redirecting to <a href="/workspace/indexing">Workspace</a>.</p>
 </section>
 
 @code {
-    private readonly CancellationTokenSource _disposeTokenSource = new();
-    private bool _isSubmitting;
-    private bool _isRefreshing;
-    private IndexAcceptedResponse? _response;
-    private ProjectStatusResponse? _status;
-    private string? _message;
-    private string? _errorMessage;
-    private string? _trackingProjectKey;
-    private PeriodicTimer? _timer;
-    private Task? _pollingTask;
-
-    protected override Task OnInitializedAsync()
+    protected override void OnAfterRender(bool firstRender)
     {
-        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
-        _pollingTask = PollAsync(_disposeTokenSource.Token);
-        return Task.CompletedTask;
-    }
-
-    private async Task PollAsync(CancellationToken cancellationToken)
-    {
-        if (_timer is null)
-            return;
-
-        while (await _timer.WaitForNextTickAsync(cancellationToken))
+        if (firstRender)
         {
-            if (_isSubmitting || _isRefreshing || string.IsNullOrWhiteSpace(_trackingProjectKey))
-                continue;
-
-            await InvokeAsync(() => LoadStatusAsync(cancellationToken));
+            NavigationManager.NavigateTo("/workspace/indexing", replace: true);
         }
-    }
-
-    private async Task HandleSubmitAsync(IndexProjectRequest request)
-    {
-        _isSubmitting = true;
-        _message = null;
-        _errorMessage = null;
-
-        try
-        {
-            _response = await WorkspaceApiClient.IndexProjectAsync(request);
-            _trackingProjectKey = _response.ProjectKey;
-            await LoadStatusAsync();
-        }
-        catch (Exception ex)
-        {
-            _response = null;
-            _status = null;
-            _errorMessage = ex.Message;
-        }
-        finally
-        {
-            _isSubmitting = false;
-        }
-    }
-
-    private async Task LoadStatusAsync(CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(_trackingProjectKey))
-            return;
-
-        _isRefreshing = true;
-
-        try
-        {
-            _status = await WorkspaceApiClient.GetStatusAsync(_trackingProjectKey, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-        finally
-        {
-            _isRefreshing = false;
-        }
-    }
-
-    private async Task HandlePauseAsync(string projectKey)
-    {
-        _errorMessage = null;
-
-        try
-        {
-            var response = await WorkspaceApiClient.PauseIndexingAsync(projectKey);
-            _message = response.Message;
-            await LoadStatusAsync();
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-    }
-
-    private async Task HandleResumeAsync(string projectKey)
-    {
-        _errorMessage = null;
-
-        try
-        {
-            var response = await WorkspaceApiClient.ResumeIndexingAsync(projectKey);
-            _message = response.Message;
-            await LoadStatusAsync();
-        }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _disposeTokenSource.Cancel();
-        _timer?.Dispose();
-
-        if (_pollingTask is not null)
-        {
-            try
-            {
-                await _pollingTask;
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-
-        _disposeTokenSource.Dispose();
     }
 }

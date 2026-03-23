@@ -199,7 +199,7 @@ public sealed class LlamaModelProvider : IAiAssistantModelProvider, IAsyncDispos
 
     private static string? ResolveRuntimeId()
     {
-        if (RuntimeInformation.ProcessArchitecture != Architecture.X64)
+        if (RuntimeInformation.ProcessArchitecture != System.Runtime.InteropServices.Architecture.X64)
         {
             return null;
         }

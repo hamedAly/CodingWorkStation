@@ -1,0 +1,359 @@
+@inject WorkspaceApiClient WorkspaceApiClient
+@implements IAsyncDisposable
+
+<section class="dashboard-stack">
+    <section class="card stack">
+        <div class="section-head">
+            <div>
+                <h2>Developer workspace</h2>
+                <p>Move between repository indexing, code search, and file exploration without leaving the same surface.</p>
+            </div>
+            <span class="status-pill status-pill-neutral">@CurrentTabLabel</span>
+        </div>
+
+        <div class="segmented-control" role="tablist" aria-label="Workspace mode">
+            <button type="button" class="segment-button @(_activeTab == "indexing" ? "segment-button-active" : string.Empty)" @onclick='() => SetActiveTab("indexing")'>Indexing</button>
+            <button type="button" class="segment-button @(_activeTab == "search" ? "segment-button-active" : string.Empty)" @onclick='() => SetActiveTab("search")'>Search</button>
+            <button type="button" class="segment-button @(_activeTab == "explorer" ? "segment-button-active" : string.Empty)" @onclick='() => SetActiveTab("explorer")'>Explorer</button>
+        </div>
+    </section>
+
+    @if (_activeTab == "indexing")
+    {
+        <section class="stack">
+            <IndexProjectForm IsBusy="_isSubmitting" OnSubmit="HandleSubmitAsync" />
+            <IndexProjectStatus
+                Response="@_response"
+                Status="@_status"
+                Message="@_message"
+                ErrorMessage="@_indexingErrorMessage"
+                IsRefreshing="@_isRefreshing"
+                OnPauseRequested="HandlePauseAsync"
+                OnResumeRequested="HandleResumeAsync" />
+        </section>
+    }
+
+    @if (_activeTab == "search")
+    {
+        <SearchWorkspace />
+    }
+
+    @if (_activeTab == "explorer")
+    {
+        <section class="card stack">
+            <div class="section-head">
+                <div>
+                    <h2>Explorer context</h2>
+                    <p>Switch repository context before drilling into folders and opening full file contents.</p>
+                </div>
+                <span class="status-pill status-pill-neutral">@(_selectedProjectKey ?? "No project selected")</span>
+            </div>
+
+            <div class="field-grid">
+                <div>
+                    <label class="field-label" for="workspace-project-selector">Project key</label>
+                    <select id="workspace-project-selector" class="field-input" @onchange="HandleProjectChanged" disabled="@_isExplorerBusy">
+                        <option value="">Select a project</option>
+                        @foreach (var project in _projects)
+                        {
+                            <option value="@project.ProjectKey" selected="@(project.ProjectKey == _selectedProjectKey)">@project.ProjectKey</option>
+                        }
+                    </select>
+                </div>
+                <div>
+                    <p class="field-label">Tree availability</p>
+                    <p class="lede">@BuildTreeSummary()</p>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_explorerErrorMessage))
+            {
+                <p class="banner banner-error">@_explorerErrorMessage</p>
+            }
+        </section>
+
+        <section class="explorer-grid">
+            <ProjectTree Nodes="@_treeNodes" OnFileSelected="HandleFileSelectedAsync" />
+            <FileViewer FilePath="@_selectedFilePath" Content="@_selectedFileContent" ErrorMessage="@_fileErrorMessage" />
+        </section>
+    }
+</section>
+
+@code {
+    private readonly CancellationTokenSource _disposeTokenSource = new();
+    private string _activeTab = "indexing";
+    private string? _appliedInitialTab;
+
+    private bool _isSubmitting;
+    private bool _isRefreshing;
+    private IndexAcceptedResponse? _response;
+    private ProjectStatusResponse? _status;
+    private string? _message;
+    private string? _indexingErrorMessage;
+    private string? _trackingProjectKey;
+    private PeriodicTimer? _timer;
+    private Task? _pollingTask;
+
+    private IReadOnlyList<ProjectWorkspaceSummaryResponse> _projects = [];
+    private IReadOnlyList<ProjectTreeNodeResponse> _treeNodes = [];
+    private string? _selectedProjectKey;
+    private string? _selectedFilePath;
+    private string? _selectedFileContent;
+    private string? _fileErrorMessage;
+    private string? _explorerErrorMessage;
+    private bool _isExplorerBusy;
+
+    [Parameter]
+    public string InitialTab { get; set; } = "indexing";
+
+    private string CurrentTabLabel => _activeTab switch
+    {
+        "search" => "Search workspace",
+        "explorer" => "Explorer workspace",
+        _ => "Indexing workspace"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        _timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        _pollingTask = PollAsync(_disposeTokenSource.Token);
+        await LoadProjectsAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        var normalizedTab = NormalizeTab(InitialTab);
+        if (string.Equals(_appliedInitialTab, normalizedTab, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _activeTab = normalizedTab;
+        _appliedInitialTab = normalizedTab;
+    }
+
+    private void SetActiveTab(string tab)
+    {
+        _activeTab = NormalizeTab(tab);
+    }
+
+    private async Task PollAsync(CancellationToken cancellationToken)
+    {
+        if (_timer is null)
+            return;
+
+        while (await _timer.WaitForNextTickAsync(cancellationToken))
+        {
+            if (_isSubmitting || _isRefreshing || string.IsNullOrWhiteSpace(_trackingProjectKey))
+                continue;
+
+            await InvokeAsync(() => LoadStatusAsync(cancellationToken));
+        }
+    }
+
+    private async Task HandleSubmitAsync(IndexProjectRequest request)
+    {
+        _isSubmitting = true;
+        _message = null;
+        _indexingErrorMessage = null;
+
+        try
+        {
+            _response = await WorkspaceApiClient.IndexProjectAsync(request);
+            _trackingProjectKey = _response.ProjectKey;
+            await LoadStatusAsync();
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _response = null;
+            _status = null;
+            _indexingErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+
+    private async Task LoadStatusAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_trackingProjectKey))
+            return;
+
+        _isRefreshing = true;
+
+        try
+        {
+            _status = await WorkspaceApiClient.GetStatusAsync(_trackingProjectKey, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _indexingErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isRefreshing = false;
+        }
+    }
+
+    private async Task HandlePauseAsync(string projectKey)
+    {
+        _indexingErrorMessage = null;
+
+        try
+        {
+            var response = await WorkspaceApiClient.PauseIndexingAsync(projectKey);
+            _message = response.Message;
+            await LoadStatusAsync();
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _indexingErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleResumeAsync(string projectKey)
+    {
+        _indexingErrorMessage = null;
+
+        try
+        {
+            var response = await WorkspaceApiClient.ResumeIndexingAsync(projectKey);
+            _message = response.Message;
+            await LoadStatusAsync();
+            await LoadProjectsAsync();
+        }
+        catch (Exception ex)
+        {
+            _indexingErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadProjectsAsync()
+    {
+        _isExplorerBusy = true;
+        _explorerErrorMessage = null;
+
+        try
+        {
+            _projects = await WorkspaceApiClient.ListProjectsAsync(_disposeTokenSource.Token) ?? [];
+            _selectedProjectKey ??= _projects.FirstOrDefault()?.ProjectKey;
+
+            if (!string.IsNullOrWhiteSpace(_selectedProjectKey))
+            {
+                await LoadTreeAsync();
+            }
+            else
+            {
+                _treeNodes = [];
+            }
+        }
+        catch (Exception ex)
+        {
+            _explorerErrorMessage = ex.Message;
+        }
+        finally
+        {
+            _isExplorerBusy = false;
+        }
+    }
+
+    private async Task HandleProjectChanged(ChangeEventArgs args)
+    {
+        _selectedProjectKey = args.Value?.ToString();
+        _selectedFilePath = null;
+        _selectedFileContent = null;
+        _fileErrorMessage = null;
+        await LoadTreeAsync();
+    }
+
+    private async Task LoadTreeAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            _treeNodes = [];
+            return;
+        }
+
+        try
+        {
+            _treeNodes = await WorkspaceApiClient.GetTreeAsync(_selectedProjectKey, _disposeTokenSource.Token) ?? [];
+            _explorerErrorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            _treeNodes = [];
+            _explorerErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleFileSelectedAsync(string relativeFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+            return;
+
+        _fileErrorMessage = null;
+        _selectedFilePath = relativeFilePath;
+
+        try
+        {
+            var file = await WorkspaceApiClient.ReadFileAsync(new ReadFileRequest(_selectedProjectKey, relativeFilePath), _disposeTokenSource.Token);
+            _selectedFileContent = file.Content;
+            _fileErrorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            _selectedFileContent = null;
+            _fileErrorMessage = ex.Message;
+        }
+    }
+
+    private string BuildTreeSummary()
+    {
+        if (_isExplorerBusy)
+        {
+            return "Loading indexed project structure.";
+        }
+
+        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            return "Pick a project to load its indexed folders and files.";
+        }
+
+        if (_treeNodes.Count == 0)
+        {
+            return "No indexed nodes are available for the selected project yet.";
+        }
+
+        return $"{_treeNodes.Count} root node(s) ready for browsing.";
+    }
+
+    private static string NormalizeTab(string? tab)
+        => tab switch
+        {
+            "search" => "search",
+            "explorer" => "explorer",
+            _ => "indexing"
+        };
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposeTokenSource.Cancel();
+        _timer?.Dispose();
+
+        if (_pollingTask is not null)
+        {
+            try
+            {
+                await _pollingTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        _disposeTokenSource.Dispose();
+    }
+}

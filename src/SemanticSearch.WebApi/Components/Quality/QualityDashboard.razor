@@ -43,37 +43,87 @@
         }
     </section>
 
-    @if (_projects.Count == 0 && !_isBusy)
+    <nav class="quality-tabs">
+        <button class="quality-tab @(_activeTab == "quality" ? "quality-tab--active" : "")" @onclick='() => _activeTab = "quality"'>Quality</button>
+        <button class="quality-tab @(_activeTab == "graph" ? "quality-tab--active" : "")" @onclick='() => _activeTab = "graph"'>Dependency Graph</button>
+        <button class="quality-tab @(_activeTab == "heatmap" ? "quality-tab--active" : "")" @onclick='() => _activeTab = "heatmap"'>Heatmap</button>
+        <button class="quality-tab @(_activeTab == "er" ? "quality-tab--active" : "")" @onclick='() => _activeTab = "er"'>Data Model</button>
+    </nav>
+
+    @if (_activeTab == "quality")
     {
-        <section class="card">
-            <p class="empty-state">No indexed projects are available yet. Start from the indexing page, then return here.</p>
-        </section>
+        @if (_projects.Count == 0 && !_isBusy)
+        {
+            <section class="card">
+                <p class="empty-state">No indexed projects are available yet. Start from the indexing page, then return here.</p>
+            </section>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_selectedProjectKey) || _scopeTreeNodes.Count > 0)
+        {
+            <QualityScopeTree
+                Nodes="@_scopeTreeNodes"
+                SelectedPath="@(_selectedScopePath ?? string.Empty)"
+                SolutionLabel="@_selectedProjectKey"
+                Disabled="@(!_canSelectScope)"
+                OnScopeSelected="@HandleScopeSelectedAsync" />
+        }
+
+        @if (_summary is not null)
+        {
+            <QualityHero Summary="@_summary" />
+
+            <section class="quality-content-grid">
+                <QualityBreakdownChart Summary="@_summary" />
+                <QualityFindingsTable Findings="@FilteredFindings" IsBusy="@_isBusy" OnOpenFinding="@OpenFindingAsync" />
+            </section>
+
+            @if (!string.IsNullOrWhiteSpace(_findingsFileFilter))
+            {
+                <section class="card">
+                    <p class="lede">Showing findings for file: <code>@_findingsFileFilter</code> &ndash; <button class="link-button" @onclick="ClearFindingsFilter">clear filter</button></p>
+                </section>
+            }
+        }
+        else if (!_isBusy && _projects.Count > 0)
+        {
+            <section class="card">
+                <p class="empty-state">Select a project and optional scope, then run a full snapshot or a specific duplication check.</p>
+            </section>
+        }
     }
 
-    @if (!string.IsNullOrWhiteSpace(_selectedProjectKey) || _scopeTreeNodes.Count > 0)
+    @if (_activeTab == "graph")
     {
-        <QualityScopeTree
-            Nodes="@_scopeTreeNodes"
-            SelectedPath="@(_selectedScopePath ?? string.Empty)"
-            SolutionLabel="@_selectedProjectKey"
-            Disabled="@(!_canSelectScope)"
-            OnScopeSelected="@HandleScopeSelectedAsync" />
+        @if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            <section class="card">
+                <p class="empty-state">Select a project in the Quality tab first.</p>
+            </section>
+        }
+        else
+        {
+            <DependencyGraphView ProjectKey="@_selectedProjectKey" />
+        }
     }
 
-    @if (_summary is not null)
+    @if (_activeTab == "heatmap")
     {
-        <QualityHero Summary="@_summary" />
-
-        <section class="quality-content-grid">
-            <QualityBreakdownChart Summary="@_summary" />
-            <QualityFindingsTable Findings="@_findings" IsBusy="@_isBusy" OnOpenFinding="@OpenFindingAsync" />
-        </section>
+        @if (string.IsNullOrWhiteSpace(_selectedProjectKey))
+        {
+            <section class="card">
+                <p class="empty-state">Select a project in the Quality tab first.</p>
+            </section>
+        }
+        else
+        {
+            <FileHeatmapView ProjectKey="@_selectedProjectKey" OnFileSelected="@HandleHeatmapFileSelected" />
+        }
     }
-    else if (!_isBusy && _projects.Count > 0)
+
+    @if (_activeTab == "er")
     {
-        <section class="card">
-            <p class="empty-state">Select a project and optional scope, then run a full snapshot or a specific duplication check.</p>
-        </section>
+        <ErDiagramView />
     }
 </section>
 
@@ -97,17 +147,42 @@
     private string? _message;
     private string? _errorMessage;
     private string? _comparisonError;
+    private string _activeTab = "quality";
+    private string? _appliedInitialTab;
+    private string? _findingsFileFilter;
     private bool _isBusy;
     private bool _isComparisonBusy;
     private bool _isModalOpen;
+
+    [Parameter]
+    public string InitialTab { get; set; } = "quality";
 
     private bool _canAnalyze => !_isBusy && !string.IsNullOrWhiteSpace(_selectedProjectKey);
     private bool _canSelectScope => !_isBusy && !string.IsNullOrWhiteSpace(_selectedProjectKey);
     private string CurrentScopeLabel => BuildScopeLabel(_selectedScopePath);
 
+    private IReadOnlyList<DuplicationFindingResponse> FilteredFindings => string.IsNullOrWhiteSpace(_findingsFileFilter)
+        ? _findings
+        : _findings
+            .Where(f => f.LeftFilePath.Contains(_findingsFileFilter, StringComparison.OrdinalIgnoreCase)
+                     || f.RightFilePath.Contains(_findingsFileFilter, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
     protected override async Task OnInitializedAsync()
     {
         await LoadProjectsAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        var normalizedTab = NormalizeTab(InitialTab);
+        if (string.Equals(_appliedInitialTab, normalizedTab, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _activeTab = normalizedTab;
+        _appliedInitialTab = normalizedTab;
     }
 
     private async Task LoadProjectsAsync()
@@ -324,6 +399,18 @@
         return Task.CompletedTask;
     }
 
+    private Task HandleHeatmapFileSelected(string relativeFilePath)
+    {
+        _findingsFileFilter = relativeFilePath;
+        _activeTab = "quality";
+        return Task.CompletedTask;
+    }
+
+    private void ClearFindingsFilter()
+    {
+        _findingsFileFilter = null;
+    }
+
     private void ApplySnapshot(QualitySnapshotResponse snapshot)
     {
         _summary = snapshot.Summary;
@@ -366,6 +453,15 @@
         => string.IsNullOrWhiteSpace(scopePath)
             ? "Entire solution"
             : scopePath;
+
+    private static string NormalizeTab(string? tab)
+        => tab switch
+        {
+            "graph" => "graph",
+            "heatmap" => "heatmap",
+            "er" => "er",
+            _ => "quality"
+        };
 
     public void Dispose()
     {

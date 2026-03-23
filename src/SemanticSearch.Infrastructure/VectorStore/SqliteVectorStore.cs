@@ -4,12 +4,13 @@ using System.Text;
 using Microsoft.Data.Sqlite;
 using SemanticSearch.Application.Common.Interfaces;
 using SemanticSearch.Domain.Entities;
+using SemanticSearch.Domain.Interfaces;
 using SemanticSearch.Domain.ValueObjects;
 using SemanticSearch.Infrastructure.Common;
 
 namespace SemanticSearch.Infrastructure.VectorStore;
 
-public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFileRepository, IQualityRepository
+public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFileRepository, IQualityRepository, IDependencyRepository
 {
     private readonly string _connectionString;
 
@@ -435,6 +436,26 @@ public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFil
         return await reader.ReadAsync(cancellationToken) ? ReadFinding(reader) : null;
     }
 
+    public async Task<IReadOnlyList<CodeRegion>> ListRegionsAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RegionId, ProjectKey, RelativeFilePath, StartLine, EndLine, Snippet, ContentHash, SourceSegmentId, Availability
+            FROM CodeRegions
+            WHERE ProjectKey = @ProjectKey;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        var results = new List<CodeRegion>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(ReadRegion(reader));
+
+        return results;
+    }
+
     public async Task<CodeRegion?> GetRegionAsync(string projectKey, string regionId, CancellationToken cancellationToken = default)
     {
         await using var connection = new SqliteConnection(_connectionString);
@@ -616,6 +637,201 @@ public sealed class SqliteVectorStore : IProjectWorkspaceRepository, IProjectFil
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(TextSanitizer.Sanitize(content)));
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
+
+    // ── IDependencyRepository ───────────────────────────────────────────────
+
+    public async Task<DependencyAnalysisRun?> GetLatestRunAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT RunId, ProjectKey, Status, RequestedUtc, StartedUtc, CompletedUtc,
+                   TotalFilesScanned, TotalNodesFound, TotalEdgesFound, FailureReason
+            FROM DependencyAnalysisRuns
+            WHERE ProjectKey = @ProjectKey
+            ORDER BY RequestedUtc DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("@ProjectKey", projectKey);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadDependencyRun(reader) : null;
+    }
+
+    public async Task<IReadOnlyList<DependencyNode>> ListNodesAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        var latestRun = await GetLatestRunAsync(projectKey, cancellationToken);
+        if (latestRun is null) return [];
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT NodeId, ProjectKey, RunId, Name, FullName, Kind, Namespace, FilePath, StartLine, ParentNodeId
+            FROM DependencyNodes
+            WHERE RunId = @RunId;
+            """;
+        command.Parameters.AddWithValue("@RunId", latestRun.RunId);
+
+        var results = new List<DependencyNode>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(ReadDependencyNode(reader));
+        return results;
+    }
+
+    public async Task<IReadOnlyList<DependencyEdge>> ListEdgesAsync(string projectKey, CancellationToken cancellationToken = default)
+    {
+        var latestRun = await GetLatestRunAsync(projectKey, cancellationToken);
+        if (latestRun is null) return [];
+
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT EdgeId, ProjectKey, RunId, SourceNodeId, TargetNodeId, RelationshipType
+            FROM DependencyEdges
+            WHERE RunId = @RunId;
+            """;
+        command.Parameters.AddWithValue("@RunId", latestRun.RunId);
+
+        var results = new List<DependencyEdge>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            results.Add(ReadDependencyEdge(reader));
+        return results;
+    }
+
+    public async Task ReplaceDependencyGraphAsync(
+        DependencyAnalysisRun run,
+        IReadOnlyList<DependencyNode> nodes,
+        IReadOnlyList<DependencyEdge> edges,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = new SqliteConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        // Delete previous data for this project
+        foreach (var table in new[] { "DependencyEdges", "DependencyNodes", "DependencyAnalysisRuns" })
+        {
+            await using var deleteCmd = connection.CreateCommand();
+            deleteCmd.Transaction = (SqliteTransaction)transaction;
+            deleteCmd.CommandText = $"DELETE FROM {table} WHERE ProjectKey = @ProjectKey;";
+            deleteCmd.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+            await deleteCmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using (var insertRun = connection.CreateCommand())
+        {
+            insertRun.Transaction = (SqliteTransaction)transaction;
+            insertRun.CommandText = """
+                INSERT INTO DependencyAnalysisRuns (
+                    RunId, ProjectKey, Status, RequestedUtc, StartedUtc, CompletedUtc,
+                    TotalFilesScanned, TotalNodesFound, TotalEdgesFound, FailureReason
+                ) VALUES (
+                    @RunId, @ProjectKey, @Status, @RequestedUtc, @StartedUtc, @CompletedUtc,
+                    @TotalFilesScanned, @TotalNodesFound, @TotalEdgesFound, @FailureReason
+                );
+                """;
+            insertRun.Parameters.AddWithValue("@RunId", run.RunId);
+            insertRun.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+            insertRun.Parameters.AddWithValue("@Status", run.Status.ToString());
+            insertRun.Parameters.AddWithValue("@RequestedUtc", run.RequestedUtc.ToString("O"));
+            insertRun.Parameters.AddWithValue("@StartedUtc", ToDbValue(run.StartedUtc));
+            insertRun.Parameters.AddWithValue("@CompletedUtc", ToDbValue(run.CompletedUtc));
+            insertRun.Parameters.AddWithValue("@TotalFilesScanned", run.TotalFilesScanned);
+            insertRun.Parameters.AddWithValue("@TotalNodesFound", run.TotalNodesFound);
+            insertRun.Parameters.AddWithValue("@TotalEdgesFound", run.TotalEdgesFound);
+            insertRun.Parameters.AddWithValue("@FailureReason", ToDbValue(run.FailureReason));
+            await insertRun.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var node in nodes)
+        {
+            await using var insertNode = connection.CreateCommand();
+            insertNode.Transaction = (SqliteTransaction)transaction;
+            insertNode.CommandText = """
+                INSERT INTO DependencyNodes (
+                    NodeId, ProjectKey, RunId, Name, FullName, Kind, Namespace, FilePath, StartLine, ParentNodeId
+                ) VALUES (
+                    @NodeId, @ProjectKey, @RunId, @Name, @FullName, @Kind, @Namespace, @FilePath, @StartLine, @ParentNodeId
+                );
+                """;
+            insertNode.Parameters.AddWithValue("@NodeId", node.NodeId);
+            insertNode.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+            insertNode.Parameters.AddWithValue("@RunId", run.RunId);
+            insertNode.Parameters.AddWithValue("@Name", node.Name);
+            insertNode.Parameters.AddWithValue("@FullName", node.FullName);
+            insertNode.Parameters.AddWithValue("@Kind", node.Kind.ToString());
+            insertNode.Parameters.AddWithValue("@Namespace", node.Namespace);
+            insertNode.Parameters.AddWithValue("@FilePath", node.FilePath);
+            insertNode.Parameters.AddWithValue("@StartLine", node.StartLine);
+            insertNode.Parameters.AddWithValue("@ParentNodeId", ToDbValue(node.ParentNodeId));
+            await insertNode.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var edge in edges)
+        {
+            await using var insertEdge = connection.CreateCommand();
+            insertEdge.Transaction = (SqliteTransaction)transaction;
+            insertEdge.CommandText = """
+                INSERT INTO DependencyEdges (
+                    EdgeId, ProjectKey, RunId, SourceNodeId, TargetNodeId, RelationshipType
+                ) VALUES (
+                    @EdgeId, @ProjectKey, @RunId, @SourceNodeId, @TargetNodeId, @RelationshipType
+                );
+                """;
+            insertEdge.Parameters.AddWithValue("@EdgeId", edge.EdgeId);
+            insertEdge.Parameters.AddWithValue("@ProjectKey", run.ProjectKey);
+            insertEdge.Parameters.AddWithValue("@RunId", run.RunId);
+            insertEdge.Parameters.AddWithValue("@SourceNodeId", edge.SourceNodeId);
+            insertEdge.Parameters.AddWithValue("@TargetNodeId", edge.TargetNodeId);
+            insertEdge.Parameters.AddWithValue("@RelationshipType", edge.RelationshipType.ToString());
+            await insertEdge.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private static DependencyAnalysisRun ReadDependencyRun(SqliteDataReader reader) => new()
+    {
+        RunId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        Status = Enum.Parse<DependencyAnalysisStatus>(reader.GetString(2)),
+        RequestedUtc = DateTime.Parse(reader.GetString(3)),
+        StartedUtc = ParseNullableDateTime(reader, 4),
+        CompletedUtc = ParseNullableDateTime(reader, 5),
+        TotalFilesScanned = reader.GetInt32(6),
+        TotalNodesFound = reader.GetInt32(7),
+        TotalEdgesFound = reader.GetInt32(8),
+        FailureReason = ParseNullableString(reader, 9)
+    };
+
+    private static DependencyNode ReadDependencyNode(SqliteDataReader reader) => new()
+    {
+        NodeId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        RunId = reader.GetString(2),
+        Name = reader.GetString(3),
+        FullName = reader.GetString(4),
+        Kind = Enum.Parse<DependencyNodeKind>(reader.GetString(5)),
+        Namespace = reader.GetString(6),
+        FilePath = reader.GetString(7),
+        StartLine = reader.GetInt32(8),
+        ParentNodeId = ParseNullableString(reader, 9)
+    };
+
+    private static DependencyEdge ReadDependencyEdge(SqliteDataReader reader) => new()
+    {
+        EdgeId = reader.GetString(0),
+        ProjectKey = reader.GetString(1),
+        RunId = reader.GetString(2),
+        SourceNodeId = reader.GetString(3),
+        TargetNodeId = reader.GetString(4),
+        RelationshipType = Enum.Parse<DependencyRelationshipType>(reader.GetString(5))
+    };
 
     private static ProjectWorkspace ReadWorkspace(SqliteDataReader reader) => new()
     {

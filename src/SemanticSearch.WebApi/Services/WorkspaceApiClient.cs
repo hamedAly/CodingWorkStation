@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
+using SemanticSearch.WebApi.Contracts.Architecture;
 using SemanticSearch.WebApi.Contracts.Files;
 using SemanticSearch.WebApi.Contracts.Projects;
 using SemanticSearch.WebApi.Contracts.Quality;
@@ -86,6 +87,28 @@ public sealed class WorkspaceApiClient
         FindingFixStreamRequest request,
         CancellationToken cancellationToken = default)
         => StreamAsync("api/quality/ai/finding-fix/stream", request, cancellationToken);
+
+    // Architecture endpoints
+    public Task<DependencyAnalysisRunResponse> RunDependencyAnalysisAsync(string projectKey, CancellationToken cancellationToken = default)
+        => PostAsync<object, DependencyAnalysisRunResponse>($"api/architecture/{Uri.EscapeDataString(projectKey)}/dependency-graph", new { }, cancellationToken);
+
+    public Task<DependencyGraphResponse?> GetDependencyGraphAsync(string projectKey, string? ns = null, string? filePath = null, CancellationToken cancellationToken = default)
+        => GetAsync<DependencyGraphResponse>(BuildGraphUrl(projectKey, ns, filePath), cancellationToken);
+
+    public Task<FileHeatmapResponse?> GetFileHeatmapAsync(string projectKey, CancellationToken cancellationToken = default)
+        => GetAsync<FileHeatmapResponse>($"api/architecture/{Uri.EscapeDataString(projectKey)}/heatmap", cancellationToken);
+
+    public Task<ErDiagramResponse?> GetErDiagramAsync(CancellationToken cancellationToken = default)
+        => GetAsync<ErDiagramResponse>("api/architecture/er-diagram", cancellationToken);
+
+    private static string BuildGraphUrl(string projectKey, string? ns, string? filePath)
+    {
+        var url = $"api/architecture/{Uri.EscapeDataString(projectKey)}/dependency-graph";
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(ns)) query.Add($"namespace={Uri.EscapeDataString(ns)}");
+        if (!string.IsNullOrWhiteSpace(filePath)) query.Add($"filePath={Uri.EscapeDataString(filePath)}");
+        return query.Count > 0 ? $"{url}?{string.Join('&', query)}" : url;
+    }
 
     private async Task<TResponse?> GetAsync<TResponse>(string url, CancellationToken cancellationToken)
     {

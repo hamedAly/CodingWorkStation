@@ -1,158 +1,18 @@
 @page "/explorer"
-@inject WorkspaceApiClient WorkspaceApiClient
+@inject NavigationManager NavigationManager
 
-<PageTitle>Explorer</PageTitle>
+<PageTitle>Workspace</PageTitle>
 
-<section class="page-header">
-    <div>
-        <p class="eyebrow">Project Explorer</p>
-        <h1>Browse indexed trees and read full files</h1>
-        <p class="lede">Open a project tree, select a file, and inspect the latest file contents from disk.</p>
-    </div>
-</section>
-
-<section class="card stack">
-    <div class="section-head">
-        <div>
-            <h2>Explorer context</h2>
-            <p>Switch repository context before drilling into folders and opening full file contents.</p>
-        </div>
-        <span class="status-pill status-pill-neutral">@(_selectedProjectKey ?? "No project selected")</span>
-    </div>
-
-    <div class="field-grid">
-        <div>
-            <label class="field-label" for="project-selector">Project key</label>
-            <select id="project-selector" class="field-input" @onchange="HandleProjectChanged" disabled="@_isBusy">
-                <option value="">Select a project</option>
-                @foreach (var project in _projects)
-                {
-                    <option value="@project.ProjectKey">@project.ProjectKey</option>
-                }
-            </select>
-        </div>
-        <div>
-            <p class="field-label">Tree availability</p>
-            <p class="lede">@BuildTreeSummary()</p>
-        </div>
-    </div>
-
-    @if (!string.IsNullOrWhiteSpace(_errorMessage))
-    {
-        <p class="banner banner-error">@_errorMessage</p>
-    }
-</section>
-
-<section class="explorer-grid">
-    <ProjectTree Nodes="@_treeNodes" OnFileSelected="HandleFileSelectedAsync" />
-    <FileViewer FilePath="@_selectedFilePath" Content="@_selectedFileContent" ErrorMessage="@_fileErrorMessage" />
+<section class="card">
+    <p class="empty-state">Explorer moved into the unified workspace. Redirecting to <a href="/workspace/explorer">Workspace</a>.</p>
 </section>
 
 @code {
-    private IReadOnlyList<ProjectWorkspaceSummaryResponse> _projects = [];
-    private IReadOnlyList<ProjectTreeNodeResponse> _treeNodes = [];
-    private string? _selectedProjectKey;
-    private string? _selectedFilePath;
-    private string? _selectedFileContent;
-    private string? _fileErrorMessage;
-    private string? _errorMessage;
-    private bool _isBusy;
-
-    protected override async Task OnInitializedAsync()
+    protected override void OnAfterRender(bool firstRender)
     {
-        await LoadProjectsAsync();
-    }
-
-    private async Task LoadProjectsAsync()
-    {
-        _isBusy = true;
-        _errorMessage = null;
-
-        try
+        if (firstRender)
         {
-            _projects = await WorkspaceApiClient.ListProjectsAsync() ?? [];
-            _selectedProjectKey ??= _projects.FirstOrDefault()?.ProjectKey;
-
-            if (!string.IsNullOrWhiteSpace(_selectedProjectKey))
-                await LoadTreeAsync();
+            NavigationManager.NavigateTo("/workspace/explorer", replace: true);
         }
-        catch (Exception ex)
-        {
-            _errorMessage = ex.Message;
-        }
-        finally
-        {
-            _isBusy = false;
-        }
-    }
-
-    private async Task HandleProjectChanged(ChangeEventArgs args)
-    {
-        _selectedProjectKey = args.Value?.ToString();
-        _selectedFilePath = null;
-        _selectedFileContent = null;
-        _fileErrorMessage = null;
-        await LoadTreeAsync();
-    }
-
-    private async Task LoadTreeAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
-        {
-            _treeNodes = [];
-            return;
-        }
-
-        try
-        {
-            _treeNodes = await WorkspaceApiClient.GetTreeAsync(_selectedProjectKey) ?? [];
-            _errorMessage = null;
-        }
-        catch (Exception ex)
-        {
-            _treeNodes = [];
-            _errorMessage = ex.Message;
-        }
-    }
-
-    private async Task HandleFileSelectedAsync(string relativeFilePath)
-    {
-        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
-            return;
-
-        _fileErrorMessage = null;
-        _selectedFilePath = relativeFilePath;
-
-        try
-        {
-            var file = await WorkspaceApiClient.ReadFileAsync(new ReadFileRequest(_selectedProjectKey, relativeFilePath));
-            _selectedFileContent = file.Content;
-            _fileErrorMessage = null;
-        }
-        catch (Exception ex)
-        {
-            _selectedFileContent = null;
-            _fileErrorMessage = ex.Message;
-        }
-    }
-
-    private string BuildTreeSummary()
-    {
-        if (_isBusy)
-        {
-            return "Loading indexed project structure.";
-        }
-
-        if (string.IsNullOrWhiteSpace(_selectedProjectKey))
-        {
-            return "Pick a project to load its indexed folders and files.";
-        }
-
-        if (_treeNodes.Count == 0)
-        {
-            return "No indexed nodes are available for the selected project yet.";
-        }
-
-        return $"{_treeNodes.Count} root node(s) ready for browsing.";
     }
 }

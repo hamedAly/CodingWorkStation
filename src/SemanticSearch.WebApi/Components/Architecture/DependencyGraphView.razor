@@ -1,0 +1,154 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject WorkspaceApiClient WorkspaceApiClient
+
+<section class="card arch-panel">
+    <div class="section-head">
+        <div>
+            <h2>Dependency Graph</h2>
+            <p>Interactive class and method call graph for the selected project.</p>
+        </div>
+        <div class="quality-actions">
+            <button class="button" @onclick="RunAnalysisAsync" disabled="@_isBusy">Run analysis</button>
+        </div>
+    </div>
+
+    <div class="field-grid">
+        <div>
+            <label class="field-label" for="@_nsFilterId">Namespace filter</label>
+            <input id="@_nsFilterId" class="field-input" type="text" placeholder="e.g. MyApp.Services"
+                   @bind="_namespaceFilter" @bind:event="oninput" @onkeyup="HandleFilterKeyUp" />
+        </div>
+        <div>
+            <label class="field-label" for="@_fileFilterId">File filter</label>
+            <input id="@_fileFilterId" class="field-input" type="text" placeholder="e.g. Services/MyService.cs"
+                   @bind="_fileFilter" @bind:event="oninput" @onkeyup="HandleFilterKeyUp" />
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="banner banner-error">@_errorMessage</p>
+    }
+
+    @if (_isBusy)
+    {
+        <p class="lede">Loading&hellip;</p>
+    }
+    else if (_graph is null)
+    {
+        <p class="empty-state">No dependency graph available. Click <strong>Run analysis</strong> to analyze the project.</p>
+    }
+    else
+    {
+        <p class="lede">@_graph.TotalNodes nodes &middot; @_graph.TotalEdges edges &middot; Analyzed @_graph.AnalyzedUtc.ToLocalTime().ToString("g")</p>
+        <div id="@_containerId" class="arch-graph-container"></div>
+        @if (!string.IsNullOrWhiteSpace(_selectedNodeId))
+        {
+            <p class="lede">Selected: <code>@_selectedNodeId</code></p>
+        }
+    }
+</section>
+
+@code {
+    private readonly string _containerId = $"dep-graph-{Guid.NewGuid():N}";
+    private readonly string _nsFilterId = $"ns-filter-{Guid.NewGuid():N}";
+    private readonly string _fileFilterId = $"file-filter-{Guid.NewGuid():N}";
+    private readonly CancellationTokenSource _cts = new();
+
+    private DotNetObjectReference<DependencyGraphView>? _dotNetRef;
+    private DependencyGraphResponse? _graph;
+    private string _namespaceFilter = string.Empty;
+    private string _fileFilter = string.Empty;
+    private string? _selectedNodeId;
+    private string? _errorMessage;
+    private bool _isBusy;
+    private bool _rendered;
+
+    [Parameter, EditorRequired]
+    public string ProjectKey { get; set; } = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGraphAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+            _rendered = true;
+        }
+
+        if (_rendered && _graph is not null && _graph.Nodes.Count > 0)
+        {
+            await JS.InvokeVoidAsync("architectureDashboard.renderDependencyGraph",
+                _containerId, _graph.Nodes, _graph.Edges, _dotNetRef);
+        }
+    }
+
+    private async Task LoadGraphAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ProjectKey)) return;
+        _isBusy = true;
+        _errorMessage = null;
+
+        try
+        {
+            _graph = await WorkspaceApiClient.GetDependencyGraphAsync(
+                ProjectKey,
+                string.IsNullOrWhiteSpace(_namespaceFilter) ? null : _namespaceFilter,
+                string.IsNullOrWhiteSpace(_fileFilter) ? null : _fileFilter,
+                _cts.Token);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isBusy = false;
+        }
+    }
+
+    private async Task RunAnalysisAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ProjectKey)) return;
+        _isBusy = true;
+        _errorMessage = null;
+
+        try
+        {
+            await WorkspaceApiClient.RunDependencyAnalysisAsync(ProjectKey, _cts.Token);
+            await LoadGraphAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            _isBusy = false;
+        }
+    }
+
+    private async Task HandleFilterKeyUp(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await LoadGraphAsync();
+    }
+
+    [JSInvokable]
+    public void OnNodeSelected(string nodeId)
+    {
+        _selectedNodeId = nodeId;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _cts.CancelAsync();
+        _cts.Dispose();
+        if (_rendered)
+            await JS.InvokeVoidAsync("architectureDashboard.destroyDependencyGraph", _containerId);
+        _dotNetRef?.Dispose();
+    }
+}
