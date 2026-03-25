@@ -14,8 +14,11 @@ public partial class NavMenu
             "Dashboard" => "Portfolio health and live workspace status",
             "Quality Analysis" => "Duplication review, dependency graph, heatmap, and data model",
             "Workspace" => "Register repositories, search code, and explore files",
-            "Automation Hub" => "Roadmap for pipelines and orchestration",
-            "Pipeline Status" => "Roadmap for delivery signal monitoring",
+            "My Work" => "Kanban board of your TFS work items by state",
+            "PR Radar" => "Active pull requests you created or are reviewing",
+            "Contributions" => "Commit and work-item activity heatmap",
+            "Integration Settings" => "TFS and Slack credentials, standup and prayer automation",
+            "Background Jobs" => "Hangfire dashboard for job monitoring and management",
             "Code Guardrails" => "Roadmap for policy-driven code checks",
             "Safety Dashboard" => "Roadmap for release and quality guardrails",
             _ => "Workspace module"
@@ -32,10 +35,13 @@ public partial class NavMenu
         [
             new NavigationItem("Workspace", Icons.Indexing, "/workspace", IsActive: true),
         ]),
-        new PhaseGroup("TFS & Automation", 3, PhaseStatus.ComingSoon,
+        new PhaseGroup("TFS & Automation", 3, PhaseStatus.Active,
         [
-            new NavigationItem("Automation Hub",  Icons.Automation, null, IsActive: false),
-            new NavigationItem("Pipeline Status", Icons.Pipeline,   null, IsActive: false),
+            new NavigationItem("My Work",               Icons.Quality,      "/my-work",              IsActive: true),
+            new NavigationItem("PR Radar",              Icons.Dependency,   "/pull-requests",        IsActive: true),
+            new NavigationItem("Contributions",         Icons.Dashboard,    "/contributions",        IsActive: true),
+            new NavigationItem("Integration Settings",  Icons.Automation,   "/integration",          IsActive: true),
+            new NavigationItem("Background Jobs",       Icons.Pipeline,     "/hangfire",             IsActive: true),
         ]),
         new PhaseGroup("Guardrails & Safety", 4, PhaseStatus.ComingSoon,
         [

@@ -171,5 +171,34 @@ public static class SqliteSchemaInitializer
         );
         CREATE INDEX IF NOT EXISTS IX_DependencyEdges_ProjectKey ON DependencyEdges(ProjectKey);
         CREATE INDEX IF NOT EXISTS IX_DependencyEdges_RunId ON DependencyEdges(RunId);
+
+        CREATE TABLE IF NOT EXISTS TfsCredentials (
+            CredentialId TEXT PRIMARY KEY,
+            ServerUrl TEXT NOT NULL,
+            EncryptedPat TEXT NOT NULL,
+            Username TEXT NOT NULL,
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS SlackCredentials (
+            CredentialId TEXT PRIMARY KEY,
+            EncryptedBotToken TEXT NOT NULL,
+            EncryptedUserToken TEXT NULL,
+            DefaultChannel TEXT NOT NULL,
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS IntegrationSettings (
+            SettingsId TEXT PRIMARY KEY,
+            StandupMessage TEXT NOT NULL DEFAULT '',
+            StandupEnabled INTEGER NOT NULL DEFAULT 0,
+            PrayerCity TEXT NOT NULL DEFAULT '',
+            PrayerCountry TEXT NOT NULL DEFAULT '',
+            PrayerMethod INTEGER NOT NULL DEFAULT 4,
+            PrayerEnabled INTEGER NOT NULL DEFAULT 0,
+            UpdatedUtc TEXT NOT NULL
+        );
         """;
 }

@@ -7,6 +7,8 @@ using SemanticSearch.WebApi.Contracts.Files;
 using SemanticSearch.WebApi.Contracts.Projects;
 using SemanticSearch.WebApi.Contracts.Quality;
 using SemanticSearch.WebApi.Contracts.Search;
+using SemanticSearch.WebApi.Contracts.Slack;
+using SemanticSearch.WebApi.Contracts.Tfs;
 
 namespace SemanticSearch.WebApi.Services;
 
@@ -101,6 +103,51 @@ public sealed class WorkspaceApiClient
     public Task<ErDiagramResponse?> GetErDiagramAsync(CancellationToken cancellationToken = default)
         => GetAsync<ErDiagramResponse>("api/architecture/er-diagram", cancellationToken);
 
+    // TFS endpoints
+    public Task<TfsCredentialStatusResponse?> GetTfsCredentialStatusAsync(CancellationToken cancellationToken = default)
+        => GetAsync<TfsCredentialStatusResponse>("api/tfs/credentials", cancellationToken);
+
+    public Task<SaveCredentialResponse> SaveTfsCredentialAsync(SaveTfsCredentialRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<SaveTfsCredentialRequest, SaveCredentialResponse>("api/tfs/credentials", request, cancellationToken);
+
+    public Task<TestConnectionResponse> TestTfsConnectionAsync(CancellationToken cancellationToken = default)
+        => PostAsync<object, TestConnectionResponse>("api/tfs/credentials/test", new { }, cancellationToken);
+
+    public Task<WorkItemsResponse?> GetWorkItemsAsync(CancellationToken cancellationToken = default)
+        => GetAsync<WorkItemsResponse>("api/tfs/workitems", cancellationToken);
+
+    public Task<PullRequestsResponse?> GetPullRequestsAsync(CancellationToken cancellationToken = default)
+        => GetAsync<PullRequestsResponse>("api/tfs/pullrequests", cancellationToken);
+
+    public Task<ContributionHeatmapResponse?> GetContributionHeatmapAsync(int months = 12, CancellationToken cancellationToken = default)
+        => GetAsync<ContributionHeatmapResponse>($"api/tfs/contributions?months={months}", cancellationToken);
+
+    // Slack endpoints
+    public Task<SlackCredentialStatusResponse?> GetSlackCredentialStatusAsync(CancellationToken cancellationToken = default)
+        => GetAsync<SlackCredentialStatusResponse>("api/slack/credentials", cancellationToken);
+
+    public Task<SaveCredentialResponse> SaveSlackCredentialAsync(SaveSlackCredentialRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<SaveSlackCredentialRequest, SaveCredentialResponse>("api/slack/credentials", request, cancellationToken);
+
+    public Task<TestConnectionResponse> TestSlackConnectionAsync(CancellationToken cancellationToken = default)
+        => PostAsync<object, TestConnectionResponse>("api/slack/credentials/test", new { }, cancellationToken);
+
+    // Integration settings endpoints
+    public Task<IntegrationSettingsResponse?> GetIntegrationSettingsAsync(CancellationToken cancellationToken = default)
+        => GetAsync<IntegrationSettingsResponse>("api/integration/settings", cancellationToken);
+
+    public Task UpdateIntegrationSettingsAsync(UpdateIntegrationSettingsRequest request, CancellationToken cancellationToken = default)
+        => PutAsync("api/integration/settings", request, cancellationToken);
+
+    public Task<TriggerJobResponse> TriggerJobAsync(string jobName, CancellationToken cancellationToken = default)
+        => PostAsync<object, TriggerJobResponse>($"api/integration/jobs/{Uri.EscapeDataString(jobName)}/trigger", new { }, cancellationToken);
+
+    public Task<DeleteCredentialResponse> DeleteTfsCredentialAsync(CancellationToken cancellationToken = default)
+        => DeleteAsync<DeleteCredentialResponse>("api/tfs/credentials", cancellationToken);
+
+    public Task<DeleteCredentialResponse> DeleteSlackCredentialAsync(CancellationToken cancellationToken = default)
+        => DeleteAsync<DeleteCredentialResponse>("api/slack/credentials", cancellationToken);
+
     private static string BuildGraphUrl(string projectKey, string? ns, string? filePath)
     {
         var url = $"api/architecture/{Uri.EscapeDataString(projectKey)}/dependency-graph";
@@ -125,6 +172,20 @@ public sealed class WorkspaceApiClient
         using var response = await _httpClient.PostAsJsonAsync(url, request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
 
+        var payload = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken);
+        return payload ?? throw new InvalidOperationException("The server returned an empty response.");
+    }
+
+    private async Task PutAsync<TRequest>(string url, TRequest request, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.PutAsJsonAsync(url, request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    private async Task<TResponse> DeleteAsync<TResponse>(string url, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.DeleteAsync(url, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
         var payload = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken);
         return payload ?? throw new InvalidOperationException("The server returned an empty response.");
     }

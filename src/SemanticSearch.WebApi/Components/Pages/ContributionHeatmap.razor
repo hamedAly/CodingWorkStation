@@ -1,0 +1,141 @@
+@page "/contributions"
+@inject WorkspaceApiClient Api
+
+@using SemanticSearch.WebApi.Contracts.Tfs
+
+<PageTitle>Contribution Heatmap</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">TFS</p>
+        <h1>Contribution Heatmap</h1>
+        <p class="lede">Your commit and work item activity over the past @_months months.</p>
+    </div>
+    <div class="header-actions">
+        <select @bind="_months" @bind:after="LoadData" class="form-control" style="width:auto">
+            <option value="3">3 months</option>
+            <option value="6">6 months</option>
+            <option value="12">12 months</option>
+        </select>
+        <button class="btn btn-secondary" @onclick="LoadData" disabled="@_isLoading">
+            @(_isLoading ? "Refreshing…" : "Refresh")
+        </button>
+    </div>
+</section>
+
+@if (_isLoading)
+{
+    <div class="loading-state">Loading contribution data…</div>
+}
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">
+        <strong>Could not load contribution data:</strong> @_error
+    </div>
+}
+else if (_heatmap is null)
+{
+    <div class="empty-state">
+        <p>No contribution data. Make sure your TFS credentials are configured in <a href="/integration">Integration Settings</a>.</p>
+    </div>
+}
+else
+{
+    @if (_heatmap.TotalContributions == 0)
+    {
+        <div class="alert alert-info" style="margin-bottom:1rem">
+            No contributions found for this period. The heatmap shows commits and work item changes attributed to <strong>@_heatmap.Username</strong> in TFS.
+            If you have activity, check that your saved username matches your TFS commit author exactly.
+        </div>
+    }
+    <div class="heatmap-summary">
+        <strong>@_heatmap.TotalContributions</strong> contributions in the last @_months months
+    </div>
+
+    <div class="heatmap-container">
+        <div class="heatmap-months">
+            @foreach (var month in GetMonthLabels())
+            {
+                <span>@month</span>
+            }
+        </div>
+
+        <div class="heatmap-grid">
+            @for (int dayOfWeek = 0; dayOfWeek < 7; dayOfWeek++)
+            {
+                var dow = dayOfWeek;
+                <div class="heatmap-row">
+                    @foreach (var cell in GetCellsForDayOfWeek(dow))
+                    {
+                        var parsed = ParseDate(cell.Date);
+                        <div class="heatmap-cell intensity-@cell.Level"
+                             title="@parsed.ToString("MMM dd, yyyy"): @cell.Count contribution@(cell.Count == 1 ? "" : "s")">
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <div class="heatmap-legend">
+            <span class="legend-label">Less</span>
+            @for (int i = 0; i <= 4; i++)
+            {
+                <div class="heatmap-cell intensity-@i"></div>
+            }
+            <span class="legend-label">More</span>
+        </div>
+    </div>
+}
+
+@code {
+    private ContributionHeatmapResponse? _heatmap;
+    private bool _isLoading;
+    private string? _error;
+    private int _months = 12;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        _isLoading = true;
+        _error = null;
+        try
+        {
+            _heatmap = await Api.GetContributionHeatmapAsync(_months);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load contribution data: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private List<ContributionDayResponse> GetCellsForDayOfWeek(int dayOfWeek)
+    {
+        if (_heatmap?.Days is null) return [];
+        return _heatmap.Days
+            .Where(d => (int)ParseDate(d.Date).DayOfWeek == dayOfWeek)
+            .OrderBy(d => d.Date)
+            .ToList();
+    }
+
+    private List<string> GetMonthLabels()
+    {
+        if (_heatmap?.Days is null || _heatmap.Days.Count == 0) return [];
+        var months = new List<string>();
+        var seen = new HashSet<string>();
+        foreach (var day in _heatmap.Days.OrderBy(d => d.Date))
+        {
+            var label = ParseDate(day.Date).ToString("MMM");
+            if (seen.Add(label))
+                months.Add(label);
+        }
+        return months;
+    }
+
+    private static DateOnly ParseDate(string date) =>
+        DateOnly.TryParse(date, out var d) ? d : DateOnly.MinValue;
+}

@@ -1,0 +1,142 @@
+@page "/my-work"
+@inject WorkspaceApiClient Api
+
+@using SemanticSearch.WebApi.Contracts.Tfs
+
+<PageTitle>My Work</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">TFS</p>
+        <h1>My Work</h1>
+        <p class="lede">Your currently assigned work items, grouped by state.</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-secondary" @onclick="LoadData" disabled="@_isLoading">
+            @(_isLoading ? "Refreshing…" : "Refresh")
+        </button>
+    </div>
+</section>
+
+@if (_isLoading)
+{
+    <div class="loading-state">Loading work items…</div>
+}
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error</div>
+}
+else if (_items is null || _items.Count == 0)
+{
+    <div class="empty-state">
+        <p>No active work items found. Make sure your TFS credentials are configured in <a href="/integration">Integration Settings</a>.</p>
+    </div>
+}
+else
+{
+    <div class="kanban-board">
+        @foreach (var column in _columns)
+        {
+            var columnItems = _items.Where(i => string.Equals(i.State, column.State, StringComparison.OrdinalIgnoreCase)).ToList();
+            <div class="kanban-column">
+                <div class="kanban-column-header">
+                    <span class="kanban-column-title">@column.Label</span>
+                    <span class="kanban-column-count">@columnItems.Count</span>
+                </div>
+                <div class="kanban-cards">
+                    @if (columnItems.Count == 0)
+                    {
+                        <div class="kanban-empty">No items</div>
+                    }
+                    @foreach (var item in columnItems)
+                    {
+                        <div class="kanban-card @(_selectedItem?.Id == item.Id ? "selected" : "")" @onclick="() => SelectItem(item)">
+                            <div class="kanban-card-type">
+                                <span class="work-item-type @GetTypeClass(item.WorkItemType)">@item.WorkItemType</span>
+                            </div>
+                            <div class="kanban-card-title">@item.Title</div>
+                            @if (!string.IsNullOrEmpty(item.AreaPath))
+                            {
+                                <div class="kanban-card-area">@item.AreaPath</div>
+                            }
+                            <div class="kanban-card-id">#@item.Id</div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (_selectedItem is not null)
+{
+    <div class="detail-panel">
+        <div class="detail-panel-header">
+            <h3>@_selectedItem.Title</h3>
+            <button class="btn-icon" @onclick="() => _selectedItem = null" title="Close">&times;</button>
+        </div>
+        <table class="detail-table">
+            <tr><th>ID</th><td>#@_selectedItem.Id</td></tr>
+            <tr><th>Type</th><td><span class="work-item-type @GetTypeClass(_selectedItem.WorkItemType)">@_selectedItem.WorkItemType</span></td></tr>
+            <tr><th>State</th><td>@_selectedItem.State</td></tr>
+            <tr><th>Area</th><td>@_selectedItem.AreaPath</td></tr>
+            <tr><th>Assigned To</th><td>@_selectedItem.AssignedTo</td></tr>
+            @if (_selectedItem.Url is not null)
+            {
+                <tr><th>Link</th><td><a href="@_selectedItem.Url" target="_blank" rel="noopener noreferrer">Open in TFS ↗</a></td></tr>
+            }
+        </table>
+    </div>
+}
+
+@code {
+    private List<WorkItemResponse>? _items;
+    private WorkItemResponse? _selectedItem;
+    private bool _isLoading;
+    private string? _error;
+
+    private record KanbanColumn(string State, string Label);
+
+    private static readonly KanbanColumn[] _columns =
+    [
+        new("New", "New"),
+        new("Active", "Active"),
+        new("Resolved", "Resolved"),
+        new("Closed", "Closed")
+    ];
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        _isLoading = true;
+        _error = null;
+        _selectedItem = null;
+        try
+        {
+            var response = await Api.GetWorkItemsAsync();
+            _items = response?.Items.ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load work items: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SelectItem(WorkItemResponse item) =>
+        _selectedItem = _selectedItem?.Id == item.Id ? null : item;
+
+    private static string GetTypeClass(string? type) => type?.ToLowerInvariant().Replace(" ", "-") switch
+    {
+        "bug" => "type-bug",
+        "task" => "type-task",
+        "user-story" => "type-story",
+        "feature" => "type-feature",
+        "epic" => "type-epic",
+        _ => "type-default"
+    };
+}

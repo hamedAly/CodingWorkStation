@@ -1,0 +1,479 @@
+@page "/integration"
+@inject WorkspaceApiClient Api
+
+@using SemanticSearch.WebApi.Contracts.Tfs
+@using SemanticSearch.WebApi.Contracts.Slack
+
+<PageTitle>Integration Settings</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">Integrations</p>
+        <h1>TFS & Slack Integration</h1>
+        <p class="lede">Connect to your TFS server to view work items and pull requests. Configure Slack automation for daily standups and prayer time status updates.</p>
+    </div>
+</section>
+
+@if (!string.IsNullOrEmpty(_globalError))
+{
+    <div class="alert alert-error">@_globalError</div>
+}
+
+<div class="settings-grid">
+
+    <!-- TFS Credentials Section -->
+    <section class="settings-card">
+        <div class="settings-card-header">
+            <h2>TFS / Azure DevOps</h2>
+            @if (_tfsStatus?.IsConfigured == true)
+            {
+                <span class="badge badge-success">Connected</span>
+            }
+            else
+            {
+                <span class="badge badge-neutral">Not configured</span>
+            }
+        </div>
+
+        @if (_tfsStatus?.IsConfigured == true)
+        {
+            <div class="settings-info">
+                <p><strong>Server:</strong> @_tfsStatus.ServerUrl</p>
+                <p><strong>Username:</strong> @_tfsStatus.Username</p>
+                <p><strong>Last updated:</strong> @_tfsStatus.UpdatedUtc?.ToString("yyyy-MM-dd HH:mm") UTC</p>
+            </div>
+        }
+
+        <div class="form-group">
+            <label>Server URL</label>
+            <input type="url" @bind="_tfsServerUrl" placeholder="https://dev.azure.com/yourorg" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label>Personal Access Token (PAT)</label>
+            <input type="password" @bind="_tfsPat" placeholder="Enter PAT..." class="form-control" />
+        </div>
+        <div class="form-group">
+            <label>Username (email)</label>
+            <input type="text" @bind="_tfsUsername" placeholder="user@domain.com" class="form-control" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(_tfsError))
+        {
+            <p class="form-error">@_tfsError</p>
+        }
+        @if (!string.IsNullOrEmpty(_tfsSuccess))
+        {
+            <p class="form-success">@_tfsSuccess</p>
+        }
+
+        <div class="button-row">
+            <button class="btn btn-primary" @onclick="SaveTfsCredential" disabled="@_tfsSaving">
+                @(_tfsSaving ? "Saving…" : "Save")
+            </button>
+            <button class="btn btn-secondary" @onclick="TestTfsConnection" disabled="@_tfsTesting">
+                @(_tfsTesting ? "Testing…" : "Test Connection")
+            </button>
+            @if (_tfsStatus?.IsConfigured == true)
+            {
+                <button class="btn btn-danger" @onclick="DeleteTfsCredential">Remove</button>
+            }
+        </div>
+    </section>
+
+    <!-- Slack Credentials Section -->
+    <section class="settings-card">
+        <div class="settings-card-header">
+            <h2>Slack</h2>
+            @if (_slackStatus?.IsConfigured == true)
+            {
+                <span class="badge badge-success">Connected</span>
+            }
+            else
+            {
+                <span class="badge badge-neutral">Not configured</span>
+            }
+        </div>
+
+        @if (_slackStatus?.IsConfigured == true)
+        {
+            <div class="settings-info">
+                <p><strong>Default channel:</strong> @_slackStatus.DefaultChannel</p>
+                <p><strong>User token:</strong> @(_slackStatus.HasUserToken ? "Configured" : "Not set")</p>
+            </div>
+        }
+
+        <div class="form-group">
+            <label>Bot Token (xoxb-…)</label>
+            <input type="password" @bind="_slackBotToken" placeholder="xoxb-..." class="form-control" />
+        </div>
+        <div class="form-group">
+            <label>User Token (xoxp-…) <span class="label-hint">Optional — required for status updates</span></label>
+            <input type="password" @bind="_slackUserToken" placeholder="xoxp-... (optional)" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label>Default Channel</label>
+            <input type="text" @bind="_slackChannel" placeholder="C0123456789" class="form-control" />
+        </div>
+
+        @if (!string.IsNullOrEmpty(_slackError))
+        {
+            <p class="form-error">@_slackError</p>
+        }
+        @if (!string.IsNullOrEmpty(_slackSuccess))
+        {
+            <p class="form-success">@_slackSuccess</p>
+        }
+
+        <div class="button-row">
+            <button class="btn btn-primary" @onclick="SaveSlackCredential" disabled="@_slackSaving">
+                @(_slackSaving ? "Saving…" : "Save")
+            </button>
+            <button class="btn btn-secondary" @onclick="TestSlackConnection" disabled="@_slackTesting">
+                @(_slackTesting ? "Testing…" : "Test Connection")
+            </button>
+            @if (_slackStatus?.IsConfigured == true)
+            {
+                <button class="btn btn-danger" @onclick="DeleteSlackCredential">Remove</button>
+            }
+        </div>
+    </section>
+
+    <!-- Standup Automation Section -->
+    <section class="settings-card">
+        <div class="settings-card-header">
+            <h2>Daily Standup</h2>
+            <span class="badge @(_settings?.StandupEnabled == true ? "badge-success" : "badge-neutral")">
+                @(_settings?.StandupEnabled == true ? "Enabled" : "Disabled")
+            </span>
+        </div>
+        <p class="settings-hint">Posts a message to your default Slack channel every weekday at 09:30 AM.</p>
+
+        <div class="form-group">
+            <label>Standup Message</label>
+            <textarea @bind="_standupMessage" rows="4" class="form-control" placeholder="Good morning team! Starting my day..."></textarea>
+        </div>
+        <div class="form-check">
+            <input type="checkbox" @bind="_standupEnabled" id="standup-enabled" />
+            <label for="standup-enabled">Enable standup automation</label>
+        </div>
+
+        <div class="button-row">
+            <button class="btn btn-primary" @onclick="SaveIntegrationSettings" disabled="@_settingsSaving">
+                @(_settingsSaving ? "Saving…" : "Save")
+            </button>
+            <button class="btn btn-secondary" @onclick="TriggerStandup" disabled="@_jobTriggering">
+                @(_jobTriggering ? "Triggering…" : "Trigger Now")
+            </button>
+        </div>
+        @if (!string.IsNullOrEmpty(_settingsMessage))
+        {
+            <p class="form-success">@_settingsMessage</p>
+        }
+    </section>
+
+    <!-- Prayer Time Section -->
+    <section class="settings-card">
+        <div class="settings-card-header">
+            <h2>Prayer Time Status</h2>
+            <span class="badge @(_settings?.PrayerEnabled == true ? "badge-success" : "badge-neutral")">
+                @(_settings?.PrayerEnabled == true ? "Enabled" : "Disabled")
+            </span>
+        </div>
+        <p class="settings-hint">Sets your Slack status to "Praying 🕌" at each prayer time with 30-minute expiration. Requires Slack user token.</p>
+
+        <div class="form-group">
+            <label>City</label>
+            <input type="text" @bind="_prayerCity" placeholder="Cairo" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label>Country</label>
+            <input type="text" @bind="_prayerCountry" placeholder="Egypt" class="form-control" />
+        </div>
+        <div class="form-group">
+            <label>Calculation Method</label>
+            <select @bind="_prayerMethod" class="form-control">
+                <option value="1">University of Islamic Sciences, Karachi</option>
+                <option value="2">Islamic Society of North America</option>
+                <option value="3">Muslim World League</option>
+                <option value="4">Umm Al-Qura University, Makkah</option>
+                <option value="5">Egyptian General Authority of Survey</option>
+                <option value="7">Institute of Geophysics, University of Tehran</option>
+                <option value="8">Gulf Region</option>
+                <option value="9">Kuwait</option>
+                <option value="10">Qatar</option>
+                <option value="11">Majlis Ugama Islam Singapura, Singapore</option>
+                <option value="12">Union Organization Islamic de France</option>
+                <option value="13">Diyanet İşleri Başkanlığı, Turkey</option>
+                <option value="14">Spiritual Administration of Muslims of Russia</option>
+                <option value="15">Moonsighting Committee Worldwide</option>
+            </select>
+        </div>
+        <div class="form-check">
+            <input type="checkbox" @bind="_prayerEnabled" id="prayer-enabled" />
+            <label for="prayer-enabled">Enable prayer time status updates</label>
+        </div>
+
+        <div class="button-row">
+            <button class="btn btn-primary" @onclick="SaveIntegrationSettings" disabled="@_settingsSaving">
+                @(_settingsSaving ? "Saving…" : "Save")
+            </button>
+            <button class="btn btn-secondary" @onclick="TriggerPrayerFetch" disabled="@_jobTriggering">
+                @(_jobTriggering ? "Fetching…" : "Fetch Prayer Times Now")
+            </button>
+        </div>
+    </section>
+
+</div>
+
+@code {
+    private TfsCredentialStatusResponse? _tfsStatus;
+    private SlackCredentialStatusResponse? _slackStatus;
+    private IntegrationSettingsResponse? _settings;
+
+    private string _tfsServerUrl = string.Empty;
+    private string _tfsPat = string.Empty;
+    private string _tfsUsername = string.Empty;
+    private string? _tfsError;
+    private string? _tfsSuccess;
+    private bool _tfsSaving;
+    private bool _tfsTesting;
+
+    private string _slackBotToken = string.Empty;
+    private string _slackUserToken = string.Empty;
+    private string _slackChannel = string.Empty;
+    private string? _slackError;
+    private string? _slackSuccess;
+    private bool _slackSaving;
+    private bool _slackTesting;
+
+    private string _standupMessage = string.Empty;
+    private bool _standupEnabled;
+    private string _prayerCity = string.Empty;
+    private string _prayerCountry = string.Empty;
+    private int _prayerMethod = 4;
+    private bool _prayerEnabled;
+    private bool _settingsSaving;
+    private string? _settingsMessage;
+    private bool _jobTriggering;
+
+    private string? _globalError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var tfsTask = Api.GetTfsCredentialStatusAsync();
+            var slackTask = Api.GetSlackCredentialStatusAsync();
+            var settingsTask = Api.GetIntegrationSettingsAsync();
+
+            await Task.WhenAll(tfsTask, slackTask, settingsTask);
+
+            _tfsStatus = tfsTask.Result;
+            _slackStatus = slackTask.Result;
+            _settings = settingsTask.Result;
+
+            if (_tfsStatus?.IsConfigured == true)
+            {
+                _tfsServerUrl = _tfsStatus.ServerUrl ?? string.Empty;
+                _tfsUsername = _tfsStatus.Username ?? string.Empty;
+            }
+
+            if (_slackStatus?.IsConfigured == true)
+                _slackChannel = _slackStatus.DefaultChannel ?? string.Empty;
+
+            if (_settings is not null)
+            {
+                _standupMessage = _settings.StandupMessage;
+                _standupEnabled = _settings.StandupEnabled;
+                _prayerCity = _settings.PrayerCity;
+                _prayerCountry = _settings.PrayerCountry;
+                _prayerMethod = _settings.PrayerMethod;
+                _prayerEnabled = _settings.PrayerEnabled;
+            }
+        }
+        catch (Exception ex)
+        {
+            _globalError = $"Failed to load settings: {ex.Message}";
+        }
+    }
+
+    private async Task SaveTfsCredential()
+    {
+        _tfsSaving = true;
+        _tfsError = null;
+        _tfsSuccess = null;
+        try
+        {
+            var result = await Api.SaveTfsCredentialAsync(new SaveTfsCredentialRequest(_tfsServerUrl, _tfsPat, _tfsUsername));
+            if (result.Success)
+            {
+                _tfsSuccess = "TFS credentials saved successfully.";
+                _tfsStatus = await Api.GetTfsCredentialStatusAsync();
+                _tfsPat = string.Empty;
+            }
+            else
+                _tfsError = result.Error ?? "Failed to save credentials.";
+        }
+        catch (Exception ex)
+        {
+            _tfsError = ex.Message;
+        }
+        finally
+        {
+            _tfsSaving = false;
+        }
+    }
+
+    private async Task TestTfsConnection()
+    {
+        _tfsTesting = true;
+        _tfsError = null;
+        _tfsSuccess = null;
+        try
+        {
+            var result = await Api.TestTfsConnectionAsync();
+            if (result.Success)
+                _tfsSuccess = "Connection successful!";
+            else
+                _tfsError = result.Error ?? "Connection failed.";
+        }
+        catch (Exception ex)
+        {
+            _tfsError = ex.Message;
+        }
+        finally
+        {
+            _tfsTesting = false;
+        }
+    }
+
+    private async Task DeleteTfsCredential()
+    {
+        try
+        {
+            await Api.DeleteTfsCredentialAsync();
+            _tfsStatus = null;
+            _tfsServerUrl = _tfsUsername = _tfsPat = string.Empty;
+            _tfsSuccess = "TFS credentials removed.";
+        }
+        catch (Exception ex)
+        {
+            _tfsError = ex.Message;
+        }
+    }
+
+    private async Task SaveSlackCredential()
+    {
+        _slackSaving = true;
+        _slackError = null;
+        _slackSuccess = null;
+        try
+        {
+            var result = await Api.SaveSlackCredentialAsync(new SaveSlackCredentialRequest(
+                _slackBotToken,
+                string.IsNullOrWhiteSpace(_slackUserToken) ? null : _slackUserToken,
+                _slackChannel));
+            if (result.Success)
+            {
+                _slackSuccess = "Slack credentials saved successfully.";
+                _slackStatus = await Api.GetSlackCredentialStatusAsync();
+                _slackBotToken = _slackUserToken = string.Empty;
+            }
+            else
+                _slackError = result.Error ?? "Failed to save credentials.";
+        }
+        catch (Exception ex)
+        {
+            _slackError = ex.Message;
+        }
+        finally
+        {
+            _slackSaving = false;
+        }
+    }
+
+    private async Task TestSlackConnection()
+    {
+        _slackTesting = true;
+        _slackError = null;
+        _slackSuccess = null;
+        try
+        {
+            var result = await Api.TestSlackConnectionAsync();
+            if (result.Success)
+                _slackSuccess = "Slack connection successful!";
+            else
+                _slackError = result.Error ?? "Connection failed.";
+        }
+        catch (Exception ex)
+        {
+            _slackError = ex.Message;
+        }
+        finally
+        {
+            _slackTesting = false;
+        }
+    }
+
+    private async Task DeleteSlackCredential()
+    {
+        try
+        {
+            await Api.DeleteSlackCredentialAsync();
+            _slackStatus = null;
+            _slackBotToken = _slackUserToken = _slackChannel = string.Empty;
+            _slackSuccess = "Slack credentials removed.";
+        }
+        catch (Exception ex)
+        {
+            _slackError = ex.Message;
+        }
+    }
+
+    private async Task SaveIntegrationSettings()
+    {
+        _settingsSaving = true;
+        _settingsMessage = null;
+        try
+        {
+            await Api.UpdateIntegrationSettingsAsync(new UpdateIntegrationSettingsRequest(
+                _standupMessage,
+                _standupEnabled,
+                _prayerCity,
+                _prayerCountry,
+                _prayerMethod,
+                _prayerEnabled));
+            _settingsMessage = "Settings saved.";
+            _settings = await Api.GetIntegrationSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            _settingsMessage = $"Failed: {ex.Message}";
+        }
+        finally
+        {
+            _settingsSaving = false;
+        }
+    }
+
+    private Task TriggerStandup() => TriggerJob("standup");
+    private Task TriggerPrayerFetch() => TriggerJob("prayer-fetch");
+
+    private async Task TriggerJob(string jobName)
+    {
+        _jobTriggering = true;
+        try
+        {
+            var result = await Api.TriggerJobAsync(jobName);
+            _settingsMessage = result.Queued ? $"Job '{jobName}' queued successfully." : result.Error;
+        }
+        catch (Exception ex)
+        {
+            _settingsMessage = ex.Message;
+        }
+        finally
+        {
+            _jobTriggering = false;
+        }
+    }
+}

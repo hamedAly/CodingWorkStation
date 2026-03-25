@@ -1,0 +1,178 @@
+@page "/pull-requests"
+@inject WorkspaceApiClient Api
+
+@using SemanticSearch.WebApi.Contracts.Tfs
+
+<PageTitle>Pull Request Radar</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">TFS</p>
+        <h1>Pull Request Radar</h1>
+        <p class="lede">Active pull requests you have created or are reviewing.</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-secondary" @onclick="LoadData" disabled="@_isLoading">
+            @(_isLoading ? "Refreshing…" : "Refresh")
+        </button>
+    </div>
+</section>
+
+@if (_isLoading)
+{
+    <div class="loading-state">Loading pull requests…</div>
+}
+else if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-error">@_error</div>
+}
+else if (_pullRequests is null || _pullRequests.Count == 0)
+{
+    <div class="empty-state">
+        <p>No active pull requests found. Make sure your TFS credentials are configured in <a href="/integration">Integration Settings</a>.</p>
+    </div>
+}
+else
+{
+    <div class="pr-list">
+        @foreach (var pr in _pullRequests)
+        {
+            <div class="pr-card @(_selectedPr?.Id == pr.Id ? "selected" : "")" @onclick="() => SelectPr(pr)">
+                <div class="pr-card-header">
+                    <span class="pr-title">@pr.Title</span>
+                    <span class="pr-status @GetStatusClass(pr.Status)">@pr.Status</span>
+                </div>
+                <div class="pr-branches">
+                    <span class="branch-name">@CleanBranch(pr.SourceBranch)</span>
+                    <span class="branch-arrow">→</span>
+                    <span class="branch-name">@CleanBranch(pr.TargetBranch)</span>
+                </div>
+                <div class="pr-repo">@pr.SourceBranch.Split('/').LastOrDefault()</div>
+                @if (pr.Reviewers?.Count > 0)
+                {
+                    <div class="pr-reviewers">
+                        @foreach (var reviewer in pr.Reviewers)
+                        {
+                            <span class="reviewer-badge @GetVoteClass(reviewer.Vote)" title="@reviewer.DisplayName: @GetVoteLabel(reviewer.Vote)">
+                                @GetInitials(reviewer.DisplayName)
+                            </span>
+                        }
+                    </div>
+                }
+                <div class="pr-meta">
+                    <span>by @pr.CreatedBy</span>
+                    <span>@pr.CreationDate.ToString("MMM dd")</span>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (_selectedPr is not null)
+{
+    <div class="detail-panel">
+        <div class="detail-panel-header">
+            <h3>@_selectedPr.Title</h3>
+            <button class="btn-icon" @onclick="() => _selectedPr = null" title="Close">&times;</button>
+        </div>
+        <table class="detail-table">
+            <tr><th>ID</th><td>#@_selectedPr.Id</td></tr>
+            <tr><th>Status</th><td><span class="pr-status @GetStatusClass(_selectedPr.Status)">@_selectedPr.Status</span></td></tr>
+            <tr><th>Repository</th><td>@_selectedPr.SourceBranch.Split('/').FirstOrDefault()</td></tr>
+            <tr><th>Source</th><td>@CleanBranch(_selectedPr.SourceBranch)</td></tr>
+            <tr><th>Target</th><td>@CleanBranch(_selectedPr.TargetBranch)</td></tr>
+            <tr><th>Created by</th><td>@_selectedPr.CreatedBy</td></tr>
+            <tr><th>Created</th><td>@_selectedPr.CreationDate.ToString("yyyy-MM-dd HH:mm") UTC</td></tr>
+        </table>
+
+        @if (_selectedPr.Reviewers?.Count > 0)
+        {
+            <h4 class="subsection-title">Reviewers</h4>
+            <table class="detail-table">
+                @foreach (var reviewer in _selectedPr.Reviewers)
+                {
+                    <tr>
+                        <td>@reviewer.DisplayName</td>
+                        <td><span class="vote-label @GetVoteClass(reviewer.Vote)">@GetVoteLabel(reviewer.Vote)</span></td>
+                    </tr>
+                }
+            </table>
+        }
+
+        <div class="detail-actions">
+            <a href="@_selectedPr.Url" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+                Open in TFS ↗
+            </a>
+        </div>
+    </div>
+}
+
+@code {
+    private List<PullRequestResponse>? _pullRequests;
+    private PullRequestResponse? _selectedPr;
+    private bool _isLoading;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync() => await LoadData();
+
+    private async Task LoadData()
+    {
+        _isLoading = true;
+        _error = null;
+        _selectedPr = null;
+        try
+        {
+            var response = await Api.GetPullRequestsAsync();
+            _pullRequests = response?.Items.ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load pull requests: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SelectPr(PullRequestResponse pr) =>
+        _selectedPr = _selectedPr?.Id == pr.Id ? null : pr;
+
+    private static string CleanBranch(string? branch) =>
+        branch?.Replace("refs/heads/", string.Empty) ?? string.Empty;
+
+    private static string GetStatusClass(string? status) => status?.ToLowerInvariant() switch
+    {
+        "active" => "status-active",
+        "completed" => "status-completed",
+        "abandoned" => "status-abandoned",
+        _ => "status-default"
+    };
+
+    private static string GetVoteClass(int vote) => vote switch
+    {
+        10 => "vote-approved",
+        5 => "vote-approved-suggestions",
+        -5 => "vote-waiting",
+        -10 => "vote-rejected",
+        _ => "vote-none"
+    };
+
+    private static string GetVoteLabel(int vote) => vote switch
+    {
+        10 => "Approved",
+        5 => "Approved with suggestions",
+        -5 => "Waiting for author",
+        -10 => "Rejected",
+        _ => "No vote"
+    };
+
+    private static string GetInitials(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[^1][0]}"
+            : name.Length >= 2 ? name[..2].ToUpper() : name.ToUpper();
+    }
+}

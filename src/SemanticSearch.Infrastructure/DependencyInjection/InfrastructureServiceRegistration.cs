@@ -5,6 +5,8 @@ using SemanticSearch.Application.Common.Interfaces;
 using SemanticSearch.Application.Quality;
 using SemanticSearch.Domain.Interfaces;
 using SemanticSearch.Infrastructure.Architecture;
+using SemanticSearch.Infrastructure.BackgroundJobs;
+using SemanticSearch.Infrastructure.Credentials;
 using SemanticSearch.Infrastructure.Embedding;
 using SemanticSearch.Infrastructure.FileSystem;
 using SemanticSearch.Infrastructure.Indexing;
@@ -12,6 +14,8 @@ using SemanticSearch.Infrastructure.ProjectTree;
 using SemanticSearch.Infrastructure.Quality;
 using SemanticSearch.Infrastructure.Quality.Assistant;
 using SemanticSearch.Infrastructure.Search;
+using SemanticSearch.Infrastructure.Slack;
+using SemanticSearch.Infrastructure.Tfs;
 using SemanticSearch.Infrastructure.VectorStore;
 
 namespace SemanticSearch.Infrastructure.DependencyInjection;
@@ -65,6 +69,29 @@ public static class InfrastructureServiceRegistration
         services.AddSingleton<IDependencyExtractor, RoslynDependencyExtractor>();
         services.AddSingleton<IHeatmapDataBuilder, HeatmapDataBuilder>();
         services.AddSingleton<IErDiagramGenerator>(_ => new SqliteErDiagramGenerator(databasePath));
+
+        // Credentials & Integration
+        services.AddDataProtection();
+        services.AddSingleton<ICredentialEncryption, CredentialEncryption>();
+        services.AddSingleton<ICredentialRepository>(sp =>
+            new SqliteCredentialRepository(
+                new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+                {
+                    DataSource = databasePath,
+                    Cache = Microsoft.Data.Sqlite.SqliteCacheMode.Shared
+                }.ToString(),
+                sp.GetRequiredService<ICredentialEncryption>()));
+        services.AddSingleton<IIntegrationSettingsRepository>(_ =>
+            new SqliteIntegrationSettingsRepository(
+                new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+                {
+                    DataSource = databasePath,
+                    Cache = Microsoft.Data.Sqlite.SqliteCacheMode.Shared
+                }.ToString()));
+        services.AddSingleton<ITfsApiClient, TfsApiClient>();
+        services.AddSingleton<ISlackApiClient, SlackApiClient>();
+        services.AddSingleton<IAladhanApiClient, AladhanApiClient>();
+        services.AddSingleton<IBackgroundJobDispatcher, HangfireJobDispatcher>();
 
         return services;
     }
