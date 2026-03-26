@@ -182,7 +182,7 @@ public sealed class TfsApiClient : ITfsApiClient
 
                 var idsParam = string.Join(",", ids);
                 using var itemsResponse = await client.GetAsync(
-                    $"_apis/wit/workitems?ids={idsParam}&fields=System.Id,System.Title,System.WorkItemType,System.State,System.AssignedTo,System.AreaPath,System.IterationPath,Microsoft.VSTS.Common.Priority,System.CreatedDate,System.ChangedDate&api-version={ver}",
+                    $"_apis/wit/workitems?ids={idsParam}&fields=System.Id,System.Title,System.WorkItemType,System.State,System.AssignedTo,System.TeamProject,System.AreaPath,System.IterationPath,Microsoft.VSTS.Common.Priority,System.CreatedDate,System.ChangedDate&api-version={ver}",
                     cancellationToken);
 
                 if (!itemsResponse.IsSuccessStatusCode)
@@ -215,6 +215,7 @@ public sealed class TfsApiClient : ITfsApiClient
                         WorkItemType: f?["System.WorkItemType"]?.GetValue<string>() ?? string.Empty,
                         State: f?["System.State"]?.GetValue<string>() ?? string.Empty,
                         AssignedTo: assignedTo,
+                        TeamProject: f?["System.TeamProject"]?.GetValue<string>(),
                         AreaPath: f?["System.AreaPath"]?.GetValue<string>(),
                         IterationPath: f?["System.IterationPath"]?.GetValue<string>(),
                         Priority: f?["Microsoft.VSTS.Common.Priority"]?.ToString(),
@@ -487,4 +488,155 @@ public sealed class TfsApiClient : ITfsApiClient
 
     private static DateTime? TryParseDate(string? value)
         => DateTime.TryParse(value, out var dt) ? dt : null;
+
+    public async Task<TfsWorkItemUpdateResult> UpdateWorkItemStateAsync(
+        string serverUrl, string pat, int workItemId, string newState,
+        CancellationToken cancellationToken = default)
+    {
+        var client = CreateClient(serverUrl, pat);
+        // JSON Patch requires a special content type
+        var patchBody = JsonSerializer.Serialize(new[]
+        {
+            new { op = "replace", path = "/fields/System.State", value = newState }
+        });
+
+        var versions = new[] { "7.1", "6.0", "5.1" };
+        foreach (var ver in versions)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(
+                    HttpMethod.Patch,
+                    $"_apis/wit/workitems/{workItemId}?api-version={ver}");
+                request.Content = new StringContent(patchBody, Encoding.UTF8, "application/json-patch+json");
+
+                using var response = await client.SendAsync(request, cancellationToken);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var node = JsonNode.Parse(json);
+                    var confirmedState = node?["fields"]?["System.State"]?.GetValue<string>();
+                    _logger.LogInformation("Updated work item {Id} state to {State} via api-version={Ver}.", workItemId, newState, ver);
+                    return new TfsWorkItemUpdateResult(true, null, confirmedState ?? newState);
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                {
+                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    var errorNode = JsonNode.Parse(errorBody);
+                    var message = errorNode?["message"]?.GetValue<string>() ?? errorBody;
+                    _logger.LogWarning("TFS rejected state update for work item {Id}: {Error}", workItemId, message);
+                    return new TfsWorkItemUpdateResult(false, $"TFS Error: {Truncate(message, 300)}", null);
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+                    return new TfsWorkItemUpdateResult(false, "Authentication failed (401). Check your PAT.", null);
+
+                if ((int)response.StatusCode is 404)
+                    return new TfsWorkItemUpdateResult(false, $"Work item {workItemId} not found.", null);
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Network error updating work item {Id}.", workItemId);
+                return new TfsWorkItemUpdateResult(false, $"Network error: {ex.Message}", null);
+            }
+        }
+
+        return new TfsWorkItemUpdateResult(false, "Failed to update work item state — all API versions failed.", null);
+    }
+
+    public async Task<IReadOnlyList<TfsWorkItemComment>> GetWorkItemCommentsAsync(
+        string serverUrl, string pat, int workItemId,
+        CancellationToken cancellationToken = default)
+    {
+        var client = CreateClient(serverUrl, pat);
+        try
+        {
+            using var response = await client.GetAsync(
+                $"_apis/wit/workitems/{workItemId}/comments?api-version=7.1-preview.4",
+                cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to load comments for work item {Id}: HTTP {Status}", workItemId, (int)response.StatusCode);
+                return [];
+            }
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            var node = JsonNode.Parse(json);
+            var comments = node?["comments"]?.AsArray();
+            if (comments is null) return [];
+
+            return comments.Select(c => new TfsWorkItemComment(
+                Id: c?["id"]?.GetValue<int>() ?? 0,
+                Text: c?["text"]?.GetValue<string>() ?? string.Empty,
+                CreatedBy: c?["createdBy"]?["displayName"]?.GetValue<string>()
+                           ?? c?["createdBy"]?.GetValue<string>()
+                           ?? "Unknown",
+                CreatedDate: TryParseDate(c?["createdDate"]?.GetValue<string>()) ?? DateTime.UtcNow
+            )).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception loading comments for work item {Id}.", workItemId);
+            return [];
+        }
+    }
+
+    public async Task<TfsWorkItemComment?> AddWorkItemCommentAsync(
+        string serverUrl, string pat, int workItemId, string text,
+        CancellationToken cancellationToken = default)
+    {
+        var client = CreateClient(serverUrl, pat);
+        var body = JsonSerializer.Serialize(new { text });
+        try
+        {
+            using var response = await client.PostAsync(
+                $"_apis/wit/workitems/{workItemId}/comments?api-version=7.1-preview.4",
+                new StringContent(body, Encoding.UTF8, "application/json"),
+                cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                var c = JsonNode.Parse(json);
+                return new TfsWorkItemComment(
+                    Id: c?["id"]?.GetValue<int>() ?? 0,
+                    Text: c?["text"]?.GetValue<string>() ?? text,
+                    CreatedBy: c?["createdBy"]?["displayName"]?.GetValue<string>()
+                               ?? c?["createdBy"]?.GetValue<string>()
+                               ?? "Unknown",
+                    CreatedDate: TryParseDate(c?["createdDate"]?.GetValue<string>()) ?? DateTime.UtcNow
+                );
+            }
+
+            // Fallback for older TFS: write to System.History field via PATCH
+            _logger.LogWarning("Comments API not available (HTTP {Status}) for work item {Id}; falling back to System.History.", (int)response.StatusCode, workItemId);
+            var patchBody = JsonSerializer.Serialize(new[]
+            {
+                new { op = "add", path = "/fields/System.History", value = text }
+            });
+            var versions = new[] { "7.1", "6.0", "5.1" };
+            foreach (var ver in versions)
+            {
+                using var patchRequest = new HttpRequestMessage(
+                    HttpMethod.Patch,
+                    $"_apis/wit/workitems/{workItemId}?api-version={ver}");
+                patchRequest.Content = new StringContent(patchBody, Encoding.UTF8, "application/json-patch+json");
+                using var patchResponse = await client.SendAsync(patchRequest, cancellationToken);
+                if (patchResponse.IsSuccessStatusCode)
+                {
+                    return new TfsWorkItemComment(0, text, "You", DateTime.UtcNow);
+                }
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Exception adding comment to work item {Id}.", workItemId);
+            return null;
+        }
+    }
 }

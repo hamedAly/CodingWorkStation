@@ -61,7 +61,7 @@ public sealed class TfsController : ControllerBase
             var items = await _mediator.Send(new GetMyWorkItemsQuery(), cancellationToken);
             var response = new WorkItemsResponse(items.Select(i => new WorkItemResponse(
                 i.Id, i.Title, i.WorkItemType, i.State, i.AssignedTo,
-                i.AreaPath, i.IterationPath, i.Priority, i.CreatedDate, i.ChangedDate, i.Url)).ToList());
+                i.TeamProject, i.AreaPath, i.IterationPath, i.Priority, i.CreatedDate, i.ChangedDate, i.Url)).ToList());
             return Ok(response);
         }
         catch (Exception ex)
@@ -100,5 +100,43 @@ public sealed class TfsController : ControllerBase
         {
             return Problem(detail: ex.Message, title: "Failed to load contribution data", statusCode: 502);
         }
+    }
+
+    [HttpPatch("workitems/{id:int}/state")]
+    [ProducesResponseType(typeof(UpdateWorkItemStateResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> UpdateWorkItemState(int id, [FromBody] UpdateWorkItemStateRequest request, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new UpdateWorkItemStateCommand(id, request.State), cancellationToken);
+        if (!result.Success)
+            return Problem(detail: result.Error, title: "Failed to update work item state", statusCode: 502);
+        return Ok(new UpdateWorkItemStateResponse(result.Success, result.Error, result.NewState));
+    }
+
+    [HttpGet("workitems/{id:int}/comments")]
+    [ProducesResponseType(typeof(WorkItemCommentsResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> GetWorkItemComments(int id, CancellationToken cancellationToken)
+    {
+        var comments = await _mediator.Send(new GetWorkItemCommentsQuery(id), cancellationToken);
+        var response = new WorkItemCommentsResponse(
+            comments.Select(c => new WorkItemCommentResponse(c.Id, c.Text, c.CreatedBy, c.CreatedDate)).ToList(),
+            comments.Count);
+        return Ok(response);
+    }
+
+    [HttpPost("workitems/{id:int}/comments")]
+    [ProducesResponseType(typeof(AddWorkItemCommentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status502BadGateway)]
+    public async Task<IActionResult> AddWorkItemComment(int id, [FromBody] AddWorkItemCommentRequest request, CancellationToken cancellationToken)
+    {
+        var comment = await _mediator.Send(new AddWorkItemCommentCommand(id, request.Text), cancellationToken);
+        if (comment is null)
+            return Problem(detail: "Failed to add comment to TFS.", title: "Comment submission failed", statusCode: 502);
+        return Ok(new AddWorkItemCommentResponse(true,
+            new WorkItemCommentResponse(comment.Id, comment.Text, comment.CreatedBy, comment.CreatedDate),
+            null));
     }
 }

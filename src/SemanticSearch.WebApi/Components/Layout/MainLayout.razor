@@ -1,21 +1,21 @@
 @inherits LayoutComponentBase
 
 <div class="app-shell flex h-screen overflow-hidden">
-    <aside class="app-sidebar-shell @(_collapsed ? "app-sidebar-collapsed" : "app-sidebar-expanded") hidden lg:flex flex-col">
-        <NavMenu Collapsed="_collapsed" OnToggleCollapse="ToggleSidebar" />
+    <aside class="app-sidebar-shell app-sidebar-strip hidden lg:flex flex-col">
+        <NavMenu />
     </aside>
 
     @if (_mobileOpen)
     {
         <div class="app-mobile-overlay fixed inset-0 z-40 lg:hidden" @onclick="CloseMobileSidebar" aria-hidden="true"></div>
 
-        <aside class="app-sidebar-shell app-sidebar-overlay fixed inset-y-0 left-0 z-50 flex flex-col lg:hidden">
-            <NavMenu Collapsed="false" OnToggleCollapse="CloseMobileSidebar" />
+        <aside class="app-sidebar-shell app-sidebar-strip fixed inset-y-0 left-0 z-50 flex flex-col lg:hidden">
+            <NavMenu />
         </aside>
     }
 
     <div class="app-main-shell flex flex-col flex-1 overflow-hidden">
-        <TopBar Collapsed="_collapsed" OnOpenMobileSidebar="OpenMobileSidebar" />
+        <TopBar OnOpenMobileSidebar="OpenMobileSidebar" />
         <main class="app-content-shell flex-1 overflow-auto">
             <div class="app-content-frame">
                 @Body
@@ -25,10 +25,7 @@
 </div>
 
 @code {
-    private bool _collapsed = false;
     private bool _mobileOpen = false;
-
-    private void ToggleSidebar() => _collapsed = !_collapsed;
     private void OpenMobileSidebar() => _mobileOpen = true;
     private void CloseMobileSidebar() => _mobileOpen = false;
 }

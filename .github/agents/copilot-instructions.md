@@ -39,6 +39,8 @@ Auto-generated from all feature plans. Last updated: 2026-02-15
 - SQLite file database (existing) — new tables for dependency graph persistence (006-visual-architecture-analysis)
 - C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR 14.1, FluentValidation 12.1, Hangfire (+ Hangfire.InMemory), Microsoft.Data.Sqlite 9.0, System.Net.Http (HttpClient for TFS/Slack/Aladhan APIs) (007-tfs-slack-automation)
 - Existing SQLite file database for credential storage (encrypted PAT/tokens); Hangfire uses in-memory storage (no persistence across restarts) (007-tfs-slack-automation)
+- C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR, FluentValidation, Tailwind CSS 4.x (standalone CLI), HTML5 Drag and Drop API (no external JS library) (008-tfs-kanban-board)
+- Existing SQLite file database for credentials; no new tables required (008-tfs-kanban-board)
 
 - C# on .NET 8 (ASP.NET Core Web API) + ASP.NET Core, Entity Framework Core, MediatR, FluentValidation, Swagger/OpenAPI (001-report-context-api)
 
@@ -59,9 +61,9 @@ tests/
 C# on .NET 8 (ASP.NET Core Web API): Follow standard conventions
 
 ## Recent Changes
+- 008-tfs-kanban-board: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR, FluentValidation, Tailwind CSS 4.x (standalone CLI), HTML5 Drag and Drop API (no external JS library)
 - 007-tfs-slack-automation: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR 14.1, FluentValidation 12.1, Hangfire (+ Hangfire.InMemory), Microsoft.Data.Sqlite 9.0, System.Net.Http (HttpClient for TFS/Slack/Aladhan APIs)
 - 006-visual-architecture-analysis: Added C# 13 on .NET 10 + ASP.NET Core (Blazor Interactive Server), MediatR 14.1.0, FluentValidation 12.1.1, Microsoft.CodeAnalysis.CSharp 4.11.0, Microsoft.Data.Sqlite, Vis.js (new — interactive graph), Mermaid.js (new — ER diagram), chartjs-chart-treemap (new — heatmap plugin)
-- 005-enterprise-app-shell: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), Tailwind CSS 4.x (standalone CLI)
 
 
 <!-- MANUAL ADDITIONS START -->

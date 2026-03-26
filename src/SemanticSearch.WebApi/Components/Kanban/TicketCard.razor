@@ -1,0 +1,94 @@
+@using SemanticSearch.WebApi.Contracts.Tfs
+
+<div class="kanban-card @GetCardClass()"
+     draggable="true"
+     @onclick="HandleClick"
+     @ondragstart="HandleDragStart"
+     @ondragend="HandleDragEnd">
+
+    @if (_boardState?.SyncingItemIds.Contains(Item.Id) == true)
+    {
+        <div class="kanban-card-syncing-overlay">
+            <span class="kanban-spinner"></span>
+        </div>
+    }
+
+    <div class="kanban-card-header">
+        <span class="kanban-card-badge kanban-badge-@GetBadgeType()">@Item.WorkItemType</span>
+        @if (_boardState?.ErrorItems.ContainsKey(Item.Id) == true)
+        {
+            <button class="kanban-card-error-dismiss" title="@_boardState.ErrorItems[Item.Id]"
+                    @onclick:stopPropagation="true"
+                    @onclick="() => _boardState.DismissError(Item.Id)">
+                ⚠
+            </button>
+        }
+    </div>
+
+    <div class="kanban-card-title">@Item.Title</div>
+
+    <div class="kanban-card-meta">
+        <span class="kanban-card-id">#@Item.Id</span>
+        @if (!string.IsNullOrEmpty(Item.AreaPath))
+        {
+            <span class="kanban-card-area">@Item.AreaPath</span>
+        }
+        @if (Item.CreatedDate.HasValue)
+        {
+            <span class="kanban-card-date">@Item.CreatedDate.Value.ToString("yyyy-MM-dd")</span>
+        }
+    </div>
+
+    @if (!string.IsNullOrEmpty(Item.Url))
+    {
+        <a class="kanban-card-tfs-link" href="@Item.Url" target="_blank" rel="noopener noreferrer"
+           @onclick:stopPropagation="true" title="Open in TFS">↗ TFS</a>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public WorkItemResponse Item { get; set; } = default!;
+    [CascadingParameter] private KanbanBoardState? _boardState { get; set; }
+
+    private bool _isDragging;
+
+    private void HandleClick()
+    {
+        if (!_isDragging)
+            _boardState?.SelectItem(Item);
+    }
+
+    private void HandleDragStart()
+    {
+        _isDragging = true;
+        _boardState?.StartDrag(Item);
+    }
+
+    private void HandleDragEnd()
+    {
+        _isDragging = false;
+        if (_boardState?.DraggedItem is not null)
+            _boardState.CancelDrag();
+    }
+
+    private string GetCardClass()
+    {
+        var classes = new List<string>();
+        if (_boardState?.DraggedItem?.Id == Item.Id) classes.Add("kanban-card--dragging");
+        if (_boardState?.SyncingItemIds.Contains(Item.Id) == true) classes.Add("kanban-card--syncing");
+        if (_boardState?.ErrorItems.ContainsKey(Item.Id) == true) classes.Add("kanban-card--error");
+        return string.Join(" ", classes);
+    }
+
+    private string GetBadgeType() => Item.WorkItemType?.ToLowerInvariant() switch
+    {
+        "bug" => "bug",
+        "task" => "task",
+        "user story" => "story",
+        "feature" => "feature",
+        "epic" => "epic",
+        "product backlog item" => "story",
+        "test case" => "task",
+        _ => "default"
+    };
+}

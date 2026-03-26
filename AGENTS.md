@@ -13,6 +13,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-25
 - SQLite file database (existing) — new tables for dependency graph persistence (DependencyAnalysisRuns, DependencyNodes, DependencyEdges) (006-visual-architecture-analysis)
 - C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR 14.1, FluentValidation 12.1, Hangfire (+ Hangfire.InMemory), Microsoft.Data.Sqlite 9.0, System.Net.Http (HttpClient for TFS/Slack/Aladhan APIs) (007-tfs-slack-automation)
 - Existing SQLite file database for credential storage (encrypted PAT/tokens); Hangfire uses in-memory storage (no persistence across restarts) (007-tfs-slack-automation)
+- C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR, FluentValidation, Tailwind CSS 4.x (standalone CLI), HTML5 Drag and Drop API (008-tfs-kanban-board)
+- Existing SQLite file database for credentials; no new tables required (008-tfs-kanban-board)
 
 - C# 13 on .NET 10 + ASP.NET Core, Blazor Web App, MediatR, FluentValidation, Microsoft.ML.OnnxRuntime, Microsoft.ML.Tokenizers, Microsoft.Data.Sqlite (002-local-semantic-search)
 
@@ -33,6 +35,7 @@ tests/
 C# 13 on .NET 10: Follow standard conventions
 
 ## Recent Changes
+- 008-tfs-kanban-board: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR, FluentValidation, Tailwind CSS 4.x (standalone CLI), HTML5 Drag and Drop API
 - 007-tfs-slack-automation: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR 14.1, FluentValidation 12.1, Hangfire (+ Hangfire.InMemory), Microsoft.Data.Sqlite 9.0, HttpClient for TFS/Slack/Aladhan APIs
 - 006-visual-architecture-analysis: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), MediatR, FluentValidation, Microsoft.CodeAnalysis.CSharp, Microsoft.Data.Sqlite, Vis.js, Mermaid.js, chartjs-chart-treemap
 - 005-enterprise-app-shell: Added C# 13 on .NET 10 + ASP.NET Core, Blazor Web App (Interactive Server), Tailwind CSS 4.x (standalone CLI)

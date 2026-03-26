@@ -1,0 +1,52 @@
+@using SemanticSearch.WebApi.Contracts.Tfs
+
+<div class="kanban-column @(_isDragOver ? "kanban-column--dragover" : "")"
+     @ondragover:preventDefault
+     @ondragenter="HandleDragEnter"
+     @ondragleave="HandleDragLeave"
+     @ondrop="HandleDrop">
+
+    <div class="kanban-column-header">
+        <span class="kanban-column-title">@Label</span>
+        <span class="kanban-column-count">@Items.Count</span>
+    </div>
+
+    <div class="kanban-cards">
+        @if (Items.Count == 0)
+        {
+            <div class="kanban-empty-column">No items</div>
+        }
+        else
+        {
+            @foreach (var item in Items)
+            {
+                <TicketCard Item="item" />
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string State { get; set; } = default!;
+    [Parameter, EditorRequired] public string Label { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyList<WorkItemResponse> Items { get; set; } = [];
+    [Parameter] public EventCallback<string> OnDrop { get; set; }
+    [CascadingParameter] private KanbanBoardState? _boardState { get; set; }
+
+    private bool _isDragOver;
+
+    private void HandleDragEnter()
+    {
+        if (_boardState?.DraggedItem is not null)
+            _isDragOver = true;
+    }
+
+    private void HandleDragLeave() => _isDragOver = false;
+
+    private async Task HandleDrop()
+    {
+        _isDragOver = false;
+        if (OnDrop.HasDelegate)
+            await OnDrop.InvokeAsync(State);
+    }
+}

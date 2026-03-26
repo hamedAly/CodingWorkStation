@@ -5,7 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <link rel="stylesheet" href="css/shell.css" />
-    <link rel="stylesheet" href="css/app.css?v=20260318-heatmap" />
+    <link rel="stylesheet" href="css/app.css?v=20260325-kanban" />
+    <script>
+        (function () {
+            var t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.classList.add('dark');
+        })();
+    </script>
     <HeadOutlet @rendermode="Microsoft.AspNetCore.Components.Web.RenderMode.InteractiveServer" />
 </head>
 <body>
@@ -15,6 +21,7 @@
     <script src="lib/mermaid/mermaid.min.js"></script>
     <script src="js/quality-dashboard.js"></script>
     <script src="js/architecture.js?v=20260318-heatmap"></script>
+    <script src="js/kanban.js"></script>
     <script src="_framework/blazor.web.js"></script>
 </body>
 </html>

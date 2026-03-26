@@ -1,109 +1,69 @@
 @namespace SemanticSearch.WebApi.Components.Layout
 
-<nav class="sidebar-shell">
-    <div class="sidebar-brand @(Collapsed ? "sidebar-brand-collapsed" : string.Empty)">
-        @if (!Collapsed)
-        {
-            <div class="sidebar-brand-mark">DC</div>
-            <div class="sidebar-brand-copy">
-                <p class="sidebar-kicker">Enterprise workspace</p>
-                <div class="sidebar-title-row">
-                    <strong>Developer Command Center</strong>
-                    <span class="sidebar-live-pill">Local-first</span>
-                </div>
-                <p class="sidebar-note">Indexing, code intelligence, and AI-assisted review for local repositories.</p>
-            </div>
-        }
-        else
-        {
-            <div class="sidebar-brand-mark">DC</div>
-        }
-    </div>
+<nav class="nav-icon-strip">
+    <a href="/" class="nav-strip-home" title="Dashboard">DC</a>
 
-    <div class="sidebar-phase-list">
+    <div class="nav-strip-groups">
         @foreach (var group in PhaseGroups)
         {
-            @if (!Collapsed)
-            {
-                <div class="sidebar-phase-head">
-                    <div>
-                        <p class="sidebar-phase-kicker">Phase @group.PhaseNumber</p>
-                        <strong>@group.Name</strong>
-                    </div>
-                    <span class="sidebar-phase-badge @(group.Status == PhaseStatus.Active ? "sidebar-phase-badge-active" : "sidebar-phase-badge-roadmap")">
-                        @(group.Status == PhaseStatus.Active ? "Active" : "Roadmap")
-                    </span>
-                </div>
-            }
+            var isOpen = _openGroupName == group.Name;
+            <button class="nav-strip-btn @(isOpen ? "nav-strip-btn-active" : string.Empty)"
+                    @onclick="() => ToggleGroup(group.Name)"
+                    title="@group.Name">
+                @GetGroupIcon(group.Name)
+            </button>
+        }
+    </div>
+</nav>
 
-            @foreach (var item in group.Items)
-            {
-                <div class="sidebar-nav-slot group relative">
-                    @if (item.IsActive && item.Route != null)
+@if (_openGroupName != null)
+{
+    var openGroup = PhaseGroups.FirstOrDefault(g => g.Name == _openGroupName);
+    if (openGroup != null)
+    {
+        <div class="nav-flyout-backdrop" @onclick="ClosePanel"></div>
+
+        <div class="nav-flyout-panel">
+            <div class="nav-flyout-header">
+                <div>
+                    <p class="nav-flyout-kicker">Phase @openGroup.PhaseNumber</p>
+                    <strong class="nav-flyout-name">@openGroup.Name</strong>
+                </div>
+                <button class="nav-flyout-close" @onclick="ClosePanel" aria-label="Close panel">
+                    @Icons.XMark
+                </button>
+            </div>
+
+            <div class="nav-flyout-items">
+                @foreach (var item in openGroup.Items)
+                {
+                    if (item.IsActive && item.Route != null)
                     {
-                        var navClass = $"sidebar-nav-link{(Collapsed ? " sidebar-nav-link-collapsed" : string.Empty)}";
                         <NavLink href="@item.Route"
-                                 Match="@(item.Route is "/" or "/architecture" ? NavLinkMatch.All : NavLinkMatch.Prefix)"
-                                 class="@navClass"
-                                 ActiveClass="sidebar-nav-link-active">
+                                 Match="NavLinkMatch.Prefix"
+                                 class="sidebar-nav-link"
+                                 ActiveClass="sidebar-nav-link-active"
+                                 @onclick="ClosePanel">
                             <span class="sidebar-nav-icon">@item.Icon</span>
-                            @if (!Collapsed)
-                            {
-                                <span class="sidebar-nav-copy">
-                                    <span class="sidebar-nav-title">@item.Label</span>
-                                    <span class="sidebar-nav-summary">@GetItemDescription(item.Label)</span>
-                                </span>
-                            }
+                            <span class="sidebar-nav-copy">
+                                <span class="sidebar-nav-title">@item.Label</span>
+                                <span class="sidebar-nav-summary">@GetItemDescription(item.Label)</span>
+                            </span>
                         </NavLink>
                     }
                     else
                     {
-                        <span class="sidebar-nav-link sidebar-nav-link-disabled @(Collapsed ? "sidebar-nav-link-collapsed" : string.Empty)">
+                        <span class="sidebar-nav-link sidebar-nav-link-disabled">
                             <span class="sidebar-nav-icon">@item.Icon</span>
-                            @if (!Collapsed)
-                            {
-                                <span class="sidebar-nav-copy">
-                                    <span class="sidebar-nav-title">@item.Label</span>
-                                    <span class="sidebar-nav-summary">@GetItemDescription(item.Label)</span>
-                                </span>
-                                <span class="sidebar-item-badge">Soon</span>
-                            }
+                            <span class="sidebar-nav-copy">
+                                <span class="sidebar-nav-title">@item.Label</span>
+                                <span class="sidebar-nav-summary">@GetItemDescription(item.Label)</span>
+                            </span>
+                            <span class="sidebar-item-badge">Soon</span>
                         </span>
                     }
-
-                    @if (Collapsed)
-                    {
-                        <div class="sidebar-tooltip">
-                            @item.Label@(!item.IsActive ? " (Coming Soon)" : "")
-                        </div>
-                    }
-                </div>
-            }
-        }
-    </div>
-
-    <div class="sidebar-footer">
-        @if (!Collapsed)
-        {
-            <section class="sidebar-footnote">
-                <p class="sidebar-kicker">Operating posture</p>
-                <strong>Private code stays on-box.</strong>
-                <p class="sidebar-note">Use local indexing, semantic retrieval, duplication review, and model-assisted remediation without leaving the workspace.</p>
-            </section>
-        }
-
-        <button @onclick="OnToggleCollapse"
-                class="sidebar-collapse-button @(Collapsed ? "sidebar-collapse-button-collapsed" : string.Empty)"
-                title="@(Collapsed ? "Expand sidebar" : "Collapse sidebar")">
-            @if (Collapsed)
-            {
-                @Icons.Bars3
-            }
-            else
-            {
-                @Icons.XMark
-                <span>Collapse navigation</span>
-            }
-        </button>
-    </div>
-</nav>
+                }
+            </div>
+        </div>
+    }
+}

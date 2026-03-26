@@ -1,0 +1,124 @@
+@inject WorkspaceApiClient Api
+@using SemanticSearch.WebApi.Contracts.Tfs
+@using Microsoft.AspNetCore.Components
+
+<div class="kanban-comments">
+    <h3 class="kanban-comments-heading">Comments / Activity</h3>
+
+    @if (_isLoading)
+    {
+        <div class="kanban-comments-loading">
+            <span class="kanban-spinner kanban-spinner--sm"></span>
+            Loading comments…
+        </div>
+    }
+    else if (!string.IsNullOrEmpty(_error))
+    {
+        <div class="kanban-comments-error">
+            @_error
+            <button class="btn btn-sm btn-secondary" @onclick="LoadComments" style="margin-left: 0.5rem;">Retry</button>
+        </div>
+    }
+    else if (_comments.Count == 0)
+    {
+        <div class="kanban-comment-empty">No comments yet.</div>
+    }
+    else
+    {
+        <div class="kanban-comment-list">
+            @foreach (var comment in _comments)
+            {
+                <div class="kanban-comment-item">
+                    <div class="kanban-comment-meta">
+                        <span class="kanban-comment-author">@comment.CreatedBy</span>
+                        <span class="kanban-comment-date">@comment.CreatedDate.ToString("yyyy-MM-dd HH:mm")</span>
+                    </div>
+                    <div class="kanban-comment-text">@((MarkupString)comment.Text)</div>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="kanban-comment-input-area">
+        <textarea class="kanban-comment-textarea"
+                  placeholder="Add a comment…"
+                  @bind="_newCommentText"
+                  disabled="@_isSubmitting"
+                  rows="3"></textarea>
+
+        @if (!string.IsNullOrEmpty(_submitError))
+        {
+            <div class="kanban-comments-error" style="margin-top: 0.25rem;">@_submitError</div>
+        }
+
+        <div style="display: flex; justify-content: flex-end; margin-top: 0.5rem;">
+            <button class="btn btn-primary btn-sm"
+                    @onclick="SubmitComment"
+                    disabled="@(string.IsNullOrWhiteSpace(_newCommentText) || _isSubmitting)">
+                @(_isSubmitting ? "Submitting…" : "Add Comment")
+            </button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int WorkItemId { get; set; }
+
+    private List<WorkItemCommentResponse> _comments = [];
+    private bool _isLoading;
+    private bool _isSubmitting;
+    private string? _error;
+    private string? _submitError;
+    private string _newCommentText = string.Empty;
+
+    protected override async Task OnInitializedAsync() => await LoadComments();
+
+    private async Task LoadComments()
+    {
+        _isLoading = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.GetWorkItemCommentsAsync(WorkItemId);
+            _comments = result?.Comments.ToList() ?? [];
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load comments: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SubmitComment()
+    {
+        if (string.IsNullOrWhiteSpace(_newCommentText)) return;
+        _isSubmitting = true;
+        _submitError = null;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.AddWorkItemCommentAsync(WorkItemId, _newCommentText);
+            if (result.Success && result.Comment is not null)
+            {
+                _comments.Add(result.Comment);
+                _newCommentText = string.Empty;
+            }
+            else
+            {
+                _submitError = result.Error ?? "Failed to submit comment.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _submitError = ex.Message;
+        }
+        finally
+        {
+            _isSubmitting = false;
+        }
+    }
+}

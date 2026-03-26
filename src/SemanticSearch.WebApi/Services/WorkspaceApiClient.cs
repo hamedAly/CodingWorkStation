@@ -148,6 +148,21 @@ public sealed class WorkspaceApiClient
     public Task<DeleteCredentialResponse> DeleteSlackCredentialAsync(CancellationToken cancellationToken = default)
         => DeleteAsync<DeleteCredentialResponse>("api/slack/credentials", cancellationToken);
 
+    public Task<UpdateWorkItemStateResponse> UpdateWorkItemStateAsync(int id, string state, CancellationToken cancellationToken = default)
+        => PatchAsync<UpdateWorkItemStateRequest, UpdateWorkItemStateResponse>(
+            $"api/tfs/workitems/{id}/state",
+            new UpdateWorkItemStateRequest(state),
+            cancellationToken);
+
+    public Task<WorkItemCommentsResponse?> GetWorkItemCommentsAsync(int id, CancellationToken cancellationToken = default)
+        => GetAsync<WorkItemCommentsResponse>($"api/tfs/workitems/{id}/comments", cancellationToken);
+
+    public Task<AddWorkItemCommentResponse> AddWorkItemCommentAsync(int id, string text, CancellationToken cancellationToken = default)
+        => PostAsync<AddWorkItemCommentRequest, AddWorkItemCommentResponse>(
+            $"api/tfs/workitems/{id}/comments",
+            new AddWorkItemCommentRequest(text),
+            cancellationToken);
+
     private static string BuildGraphUrl(string projectKey, string? ns, string? filePath)
     {
         var url = $"api/architecture/{Uri.EscapeDataString(projectKey)}/dependency-graph";
@@ -180,6 +195,21 @@ public sealed class WorkspaceApiClient
     {
         using var response = await _httpClient.PutAsJsonAsync(url, request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    private async Task<TResponse> PatchAsync<TRequest, TResponse>(
+        string url,
+        TRequest request,
+        CancellationToken cancellationToken)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Patch, url)
+        {
+            Content = JsonContent.Create(request)
+        };
+        using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var payload = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken);
+        return payload ?? throw new InvalidOperationException("The server returned an empty response.");
     }
 
     private async Task<TResponse> DeleteAsync<TResponse>(string url, CancellationToken cancellationToken)

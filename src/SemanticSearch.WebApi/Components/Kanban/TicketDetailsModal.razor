@@ -1,0 +1,86 @@
+@using SemanticSearch.WebApi.Contracts.Tfs
+@using SemanticSearch.WebApi.Components.Kanban
+
+<div class="kanban-modal-backdrop" @onclick="OnClose" @onkeydown="HandleKeyDown" tabindex="-1">
+    <div class="kanban-modal" @onclick:stopPropagation>
+        <div class="kanban-modal-header">
+            <div class="kanban-modal-title-area">
+                <span class="kanban-card-badge kanban-badge-@GetBadgeType()">@Item.WorkItemType</span>
+                <h2 class="kanban-modal-title">@Item.Title</h2>
+            </div>
+            <button class="kanban-modal-close" @onclick="OnClose" aria-label="Close">✕</button>
+        </div>
+
+        <div class="kanban-modal-body">
+            <table class="kanban-detail-table">
+                <tbody>
+                    <tr>
+                        <td class="kanban-detail-label">ID</td>
+                        <td class="kanban-detail-value">#@Item.Id</td>
+                    </tr>
+                    <tr>
+                        <td class="kanban-detail-label">State</td>
+                        <td class="kanban-detail-value">@Item.State</td>
+                    </tr>
+                    <tr>
+                        <td class="kanban-detail-label">Assigned To</td>
+                        <td class="kanban-detail-value">@(Item.AssignedTo ?? "—")</td>
+                    </tr>
+                    <tr>
+                        <td class="kanban-detail-label">Area Path</td>
+                        <td class="kanban-detail-value">@(Item.AreaPath ?? "—")</td>
+                    </tr>
+                    <tr>
+                        <td class="kanban-detail-label">Iteration Path</td>
+                        <td class="kanban-detail-value">@(Item.IterationPath ?? "—")</td>
+                    </tr>
+                    <tr>
+                        <td class="kanban-detail-label">Priority</td>
+                        <td class="kanban-detail-value">@(Item.Priority ?? "—")</td>
+                    </tr>
+                    @if (Item.CreatedDate.HasValue)
+                    {
+                        <tr>
+                            <td class="kanban-detail-label">Created</td>
+                            <td class="kanban-detail-value">@Item.CreatedDate.Value.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                    @if (Item.ChangedDate.HasValue)
+                    {
+                        <tr>
+                            <td class="kanban-detail-label">Last Changed</td>
+                            <td class="kanban-detail-value">@Item.ChangedDate.Value.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+
+            <div class="kanban-modal-divider"></div>
+
+            <CommentSection WorkItemId="Item.Id" />
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public WorkItemResponse Item { get; set; } = default!;
+    [Parameter, EditorRequired] public EventCallback OnClose { get; set; }
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape")
+            await OnClose.InvokeAsync();
+    }
+
+    private string GetBadgeType() => Item.WorkItemType?.ToLowerInvariant() switch
+    {
+        "bug" => "bug",
+        "task" => "task",
+        "user story" => "story",
+        "feature" => "feature",
+        "epic" => "epic",
+        "product backlog item" => "story",
+        "test case" => "task",
+        _ => "default"
+    };
+}

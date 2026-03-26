@@ -1,0 +1,256 @@
+@page "/my-work"
+@inject WorkspaceApiClient Api
+@inject IJSRuntime JS
+@using SemanticSearch.WebApi.Contracts.Tfs
+@using SemanticSearch.WebApi.Components.Kanban
+
+<PageTitle>Kanban Board</PageTitle>
+
+<section class="page-header">
+    <div>
+        <p class="eyebrow">TFS</p>
+        <h1>Kanban Board</h1>
+        <p class="lede">Your assigned work items — drag cards between columns to update their state.</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn btn-icon" title="Toggle dark mode" @onclick="ToggleDarkMode">
+            @(_isDarkMode ? "☀" : "🌙")
+        </button>
+        <button class="btn btn-secondary" @onclick="LoadData" disabled="@_boardState.IsLoading">
+            @(_boardState.IsLoading ? "Refreshing…" : "Refresh")
+        </button>
+    </div>
+</section>
+
+@if (_boardState.IsLoading)
+{
+    <div class="loading-state">
+        <span class="kanban-spinner"></span>
+        Loading work items…
+    </div>
+}
+else if (!string.IsNullOrEmpty(_boardState.Error))
+{
+    <div class="alert alert-error">
+        @_boardState.Error
+        <button class="btn btn-sm btn-secondary" @onclick="LoadData" style="margin-left: 0.5rem;">Retry</button>
+    </div>
+}
+else
+{
+    <!-- Filter bar -->
+    <div class="kanban-toolbar">
+        <div class="kanban-filters">
+            <!-- Project filter -->
+            <div class="kanban-filter-group">
+                <label class="kanban-filter-label">Project</label>
+                <select class="kanban-filter-select" @bind="_filterProject">
+                    <option value="">All Projects</option>
+                    @foreach (var proj in AllProjects)
+                    {
+                        <option value="@proj">@proj</option>
+                    }
+                </select>
+            </div>
+
+            <!-- Item type filter -->
+            <div class="kanban-filter-group">
+                <label class="kanban-filter-label">Type</label>
+                <div class="kanban-type-checkboxes">
+                    @foreach (var type in AllTypes)
+                    {
+                        <label class="kanban-checkbox-label">
+                            <input type="checkbox"
+                                   checked="@_filterTypes.Contains(type)"
+                                   @onchange="e => ToggleTypeFilter(type, (bool)e.Value!)" />
+                            @type
+                        </label>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Column toggle -->
+        <div class="kanban-column-toggle">
+            <span class="kanban-filter-label">Columns</span>
+            <div class="kanban-type-checkboxes">
+                @foreach (var col in _allAvailableColumns)
+                {
+                    var isActive = _activeColumnStates.Contains(col.State);
+                    <label class="kanban-checkbox-label">
+                        <input type="checkbox"
+                               checked="@isActive"
+                               @onchange="e => ToggleColumn(col.State, (bool)e.Value!)" />
+                        @col.Label
+                    </label>
+                }
+            </div>
+        </div>
+    </div>
+
+    <CascadingValue Value="_boardState">
+        <div class="kanban-board">
+            @foreach (var col in ActiveColumns)
+            {
+                var colItems = FilteredItems
+                    .Where(i => string.Equals(i.State, col.State, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                <BoardColumn State="@col.State" Label="@col.Label" Items="colItems" OnDrop="HandleDrop" />
+            }
+        </div>
+
+        @if (_boardState.SelectedItem is not null)
+        {
+            <TicketDetailsModal Item="_boardState.SelectedItem" OnClose="() => _boardState.SelectItem(null)" />
+        }
+    </CascadingValue>
+}
+
+@code {
+    private readonly KanbanBoardState _boardState = new();
+    private bool _isDarkMode;
+
+    // Filters
+    private string _filterProject = "Imaging";
+    private readonly HashSet<string> _filterTypes = [];
+
+    // Column configuration
+    private readonly HashSet<string> _activeColumnStates = ["New", "Dev Inprogress", "Dev Done", "Reopen"];
+
+    private static readonly (string State, string Label)[] _allAvailableColumns =
+    [
+        ("New",           "New"),
+        ("Active",        "Active"),
+        ("Dev Inprogress","Dev Inprogress"),
+        ("Dev Done",      "Dev Done"),
+        ("Reopen",        "Reopen"),
+        ("Resolved",      "Resolved"),
+        ("Closed",        "Closed"),
+    ];
+
+    private IEnumerable<(string State, string Label)> ActiveColumns =>
+        _allAvailableColumns.Where(c => _activeColumnStates.Contains(c.State));
+
+    private IEnumerable<string> AllProjects =>
+        _boardState.Items
+            .Select(i => i.TeamProject ?? ExtractProject(i.AreaPath))
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(p => p);
+
+    private IEnumerable<string> AllTypes =>
+        _boardState.Items
+            .Select(i => i.WorkItemType)
+            .Where(t => !string.IsNullOrEmpty(t))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(t => t);
+
+    private IEnumerable<WorkItemResponse> FilteredItems
+    {
+        get
+        {
+            var items = _boardState.Items.AsEnumerable();
+
+            if (!string.IsNullOrEmpty(_filterProject))
+            {
+                items = items.Where(i =>
+                    string.Equals(i.TeamProject ?? ExtractProject(i.AreaPath), _filterProject, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (_filterTypes.Count > 0)
+            {
+                items = items.Where(i => _filterTypes.Contains(i.WorkItemType ?? "", StringComparer.OrdinalIgnoreCase));
+            }
+
+            return items;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _boardState.OnStateChanged = () => InvokeAsync(StateHasChanged);
+        await LoadDarkModePreference();
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _boardState.IsLoading = true;
+        _boardState.Error = null;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.GetWorkItemsAsync();
+            _boardState.Initialize(result?.Items ?? []);
+        }
+        catch (Exception ex)
+        {
+            _boardState.Error = $"Failed to load work items: {ex.Message}";
+        }
+        finally
+        {
+            _boardState.IsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task HandleDrop(string targetState)
+    {
+        var item = _boardState.DropOnColumn(targetState);
+        if (item is null) return;
+
+        var originalState = _boardState.DragSourceState ?? item.State;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Api.UpdateWorkItemStateAsync(item.Id, targetState);
+            if (result.Success)
+                _boardState.CompleteSyncSuccess(item.Id);
+            else
+                _boardState.CompleteSyncFailure(item.Id, result.Error ?? "State update failed.", originalState);
+        }
+        catch (Exception ex)
+        {
+            _boardState.CompleteSyncFailure(item.Id, ex.Message, originalState);
+        }
+        StateHasChanged();
+    }
+
+    private void ToggleTypeFilter(string type, bool add)
+    {
+        if (add) _filterTypes.Add(type);
+        else _filterTypes.Remove(type);
+    }
+
+    private void ToggleColumn(string state, bool add)
+    {
+        if (add) _activeColumnStates.Add(state);
+        else _activeColumnStates.Remove(state);
+    }
+
+    private static string? ExtractProject(string? areaPath) =>
+        string.IsNullOrEmpty(areaPath) ? null : areaPath.Split('\\')[0];
+
+    private async Task ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+        var theme = _isDarkMode ? "dark" : "light";
+        await JS.InvokeVoidAsync("themeManager.set", theme);
+        StateHasChanged();
+    }
+
+    private async Task LoadDarkModePreference()
+    {
+        try
+        {
+            var stored = await JS.InvokeAsync<string>("themeManager.get");
+            _isDarkMode = stored == "dark";
+        }
+        catch
+        {
+            _isDarkMode = false;
+        }
+    }
+}
+
