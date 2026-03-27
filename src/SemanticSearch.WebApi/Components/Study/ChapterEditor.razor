@@ -1,0 +1,168 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+<section class="study-section-card study-chapter-panel">
+    <div class="study-section-head">
+        <h3>Chapters</h3>
+    </div>
+
+    <div class="study-upload-form">
+        <input type="text" placeholder="Chapter title" @bind="_title" />
+        <input type="number" min="1" placeholder="Start page" @bind="_startPage" />
+        <input type="number" min="1" placeholder="End page" @bind="_endPage" />
+        <button type="button" @onclick="SaveAsync">@(_editingChapterId is null ? "Add chapter" : "Update chapter")</button>
+        @if (_editingChapterId is not null)
+        {
+            <button type="button" @onclick="CancelEdit">Cancel</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="study-inline-error">@_errorMessage</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(OverlapWarning))
+    {
+        <p class="banner banner-warn">@OverlapWarning</p>
+    }
+
+    <div class="study-chapter-list-scroll">
+        <ol class="study-chapter-list">
+            @foreach (var chapter in Chapters.OrderBy(c => c.SortOrder))
+            {
+                <li class="study-chapter-item">
+                    <button type="button" class="study-chapter-link" @onclick="() => OnChapterPageJump.InvokeAsync(chapter.StartPage)">
+                        <span>@chapter.Title</span>
+                        <span>pp. @chapter.StartPage-@chapter.EndPage</span>
+                    </button>
+                    <div class="study-chapter-actions">
+                        @if (chapter.HasAudio)
+                        {
+                            <button type="button" class="button-secondary" @onclick="() => OnPlayAudioRequested.InvokeAsync(chapter.Id)">Play</button>
+                        }
+                        <InputFile OnChange="args => UploadAudioAsync(chapter.Id, args)" accept=".mp3,.wav,.m4a,audio/*" />
+                        <button type="button" @onclick="() => BeginEdit(chapter)">Edit</button>
+                        <button type="button" @onclick="() => DeleteAsync(chapter.Id)">Delete</button>
+                    </div>
+                </li>
+            }
+        </ol>
+    </div>
+</section>
+
+@code {
+    private string _title = string.Empty;
+    private int _startPage = 1;
+    private int _endPage = 1;
+    private string? _editingChapterId;
+    private string? _errorMessage;
+
+    [Parameter, EditorRequired]
+    public string BookId { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ChapterResponse> Chapters { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<int> OnChapterPageJump { get; set; }
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnPlayAudioRequested { get; set; }
+
+    private string? OverlapWarning
+    {
+        get
+        {
+            if (_startPage <= 0 || _endPage <= 0 || _endPage < _startPage)
+                return null;
+
+            var overlaps = Chapters
+                .Where(chapter => !string.Equals(chapter.Id, _editingChapterId, StringComparison.Ordinal))
+                .Where(chapter => _startPage <= chapter.EndPage && _endPage >= chapter.StartPage)
+                .OrderBy(chapter => chapter.SortOrder)
+                .ToList();
+
+            if (overlaps.Count == 0)
+                return null;
+
+            return $"This page range overlaps with {string.Join(", ", overlaps.Select(chapter => chapter.Title))}. Save is still allowed.";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            _errorMessage = null;
+            if (string.IsNullOrWhiteSpace(_editingChapterId))
+            {
+                await ApiClient.AddChapterAsync(BookId, new AddChapterRequest(_title, _startPage, _endPage));
+            }
+            else
+            {
+                await ApiClient.UpdateChapterAsync(BookId, _editingChapterId, new UpdateChapterRequest(_title, _startPage, _endPage));
+            }
+
+            ResetForm();
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private void BeginEdit(ChapterResponse chapter)
+    {
+        _editingChapterId = chapter.Id;
+        _title = chapter.Title;
+        _startPage = chapter.StartPage;
+        _endPage = chapter.EndPage;
+    }
+
+    private async Task DeleteAsync(string chapterId)
+    {
+        try
+        {
+            _errorMessage = null;
+            await ApiClient.DeleteChapterAsync(BookId, chapterId);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task UploadAudioAsync(string chapterId, InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null)
+            return;
+
+        try
+        {
+            _errorMessage = null;
+            await ApiClient.UploadChapterAudioAsync(BookId, chapterId, file);
+            await OnChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private void CancelEdit() => ResetForm();
+
+    private void ResetForm()
+    {
+        _editingChapterId = null;
+        _title = string.Empty;
+        _startPage = 1;
+        _endPage = 1;
+    }
+}

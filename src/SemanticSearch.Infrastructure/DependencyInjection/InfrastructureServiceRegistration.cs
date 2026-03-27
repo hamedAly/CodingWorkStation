@@ -15,6 +15,7 @@ using SemanticSearch.Infrastructure.Quality;
 using SemanticSearch.Infrastructure.Quality.Assistant;
 using SemanticSearch.Infrastructure.Search;
 using SemanticSearch.Infrastructure.Slack;
+using SemanticSearch.Infrastructure.Study;
 using SemanticSearch.Infrastructure.Tfs;
 using SemanticSearch.Infrastructure.VectorStore;
 
@@ -88,10 +89,19 @@ public static class InfrastructureServiceRegistration
                     DataSource = databasePath,
                     Cache = Microsoft.Data.Sqlite.SqliteCacheMode.Shared
                 }.ToString()));
+        services.AddSingleton<IStudyReminderSettingsRepository>(_ =>
+            new SqliteStudyReminderSettingsRepository(
+                new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+                {
+                    DataSource = databasePath,
+                    Cache = Microsoft.Data.Sqlite.SqliteCacheMode.Shared
+                }.ToString()));
         services.AddSingleton<ITfsApiClient, TfsApiClient>();
         services.AddSingleton<ISlackApiClient, SlackApiClient>();
         services.AddSingleton<IAladhanApiClient, AladhanApiClient>();
         services.AddSingleton<IBackgroundJobDispatcher, HangfireJobDispatcher>();
+        services.AddSingleton<IStudyRepository>(_ => new SqliteStudyRepository(databasePath));
+        services.AddSingleton<IFlashCardRepository>(_ => new SqliteFlashCardRepository(databasePath));
 
         return services;
     }

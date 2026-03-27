@@ -1,0 +1,147 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<section class="study-section-card">
+    <div class="study-section-head">
+        <div>
+            <h3>Study analytics</h3>
+            <p>Track momentum, weekly study volume, and chapter completion by book.</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="banner banner-error">@_errorMessage</p>
+    }
+    else if (_isLoading)
+    {
+        <div class="empty-state">Loading dashboard...</div>
+    }
+    else if (_dashboard is null)
+    {
+        <div class="empty-state">No dashboard data yet.</div>
+    }
+    else
+    {
+        <div class="study-analytics-metrics">
+            <article class="study-analytics-card study-streak">
+                <span>Study streak</span>
+                <strong>@_dashboard.StudyStreakDays day(s)</strong>
+            </article>
+            <article class="study-analytics-card">
+                <span>Plan items due</span>
+                <strong>@_dashboard.DuePlanItemsCount</strong>
+            </article>
+            <article class="study-analytics-card">
+                <span>Flashcards due</span>
+                <strong>@_dashboard.DueFlashCardCount</strong>
+            </article>
+            <article class="study-analytics-card">
+                <span>Retention</span>
+                <strong>@_dashboard.RetentionRate.ToString("0.#")%</strong>
+            </article>
+        </div>
+
+        <div class="study-chart-container">
+            <div class="study-section-head">
+                <h4>Weekly study hours</h4>
+            </div>
+            <canvas id="@_weeklyCanvasId"></canvas>
+        </div>
+
+        <div class="study-progress-list">
+            <div class="study-section-head">
+                <h4>Book progress</h4>
+            </div>
+
+            @if (_dashboard.BookProgress.Count == 0)
+            {
+                <div class="empty-state">Create a plan and complete chapters to populate progress.</div>
+            }
+            else
+            {
+                @foreach (var book in _dashboard.BookProgress)
+                {
+                    <article class="study-progress-card">
+                        <div class="study-progress-head">
+                            <strong>@book.BookTitle</strong>
+                            <span>@book.CompletedChapters / @book.TotalChapters chapters</span>
+                        </div>
+                        <div class="study-progress-bar">
+                            <span class="study-progress-bar-fill" style="width:@book.ProgressPercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%"></span>
+                        </div>
+                    </article>
+                }
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private readonly string _weeklyCanvasId = $"study-weekly-hours-{Guid.NewGuid():N}";
+    private StudyDashboardResponse? _dashboard;
+    private bool _isLoading;
+    private bool _renderChart;
+    private string? _errorMessage;
+    private int? _lastRefreshVersion;
+
+    [Parameter]
+    public int RefreshVersion { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastRefreshVersion == RefreshVersion && _dashboard is not null)
+            return;
+
+        _lastRefreshVersion = RefreshVersion;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_renderChart || _dashboard is null)
+            return;
+
+        _renderChart = false;
+        await JS.InvokeVoidAsync(
+            "studyDashboard.renderBarChart",
+            _weeklyCanvasId,
+            _dashboard.WeeklyHours.Select(day => day.Date.ToString("ddd")).ToArray(),
+            _dashboard.WeeklyHours.Select(day => Math.Round(day.Hours, 2)).ToArray(),
+            "Hours",
+            "rgb(198, 123, 44)");
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            _dashboard = await ApiClient.GetStudyDashboardAsync();
+            _renderChart = _dashboard is not null;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("studyDashboard.destroyChart", _weeklyCanvasId);
+        }
+        catch
+        {
+        }
+    }
+}

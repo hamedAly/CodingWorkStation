@@ -18,6 +18,8 @@ public sealed record IntegrationSettingsResponse(
     string PrayerCountry,
     int PrayerMethod,
     bool PrayerEnabled,
+    bool StudyReminderEnabled,
+    string StudyReminderTime,
     DateTime? UpdatedUtc);
 
 public sealed record UpdateIntegrationSettingsRequest(
@@ -26,6 +28,8 @@ public sealed record UpdateIntegrationSettingsRequest(
     string PrayerCity,
     string PrayerCountry,
     int PrayerMethod,
-    bool PrayerEnabled);
+    bool PrayerEnabled,
+    bool StudyReminderEnabled,
+    string StudyReminderTime);
 
 public sealed record TriggerJobResponse(bool Queued, string? Error);

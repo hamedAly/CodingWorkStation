@@ -200,5 +200,119 @@ public static class SqliteSchemaInitializer
             PrayerEnabled INTEGER NOT NULL DEFAULT 0,
             UpdatedUtc TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS StudyReminderSettings (
+            SettingsId TEXT PRIMARY KEY,
+            Enabled INTEGER NOT NULL DEFAULT 0,
+            ReminderTime TEXT NOT NULL DEFAULT '08:00',
+            UpdatedUtc TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS StudyBooks (
+            Id TEXT PRIMARY KEY,
+            Title TEXT NOT NULL,
+            Author TEXT NULL,
+            Description TEXT NULL,
+            FileName TEXT NOT NULL,
+            FilePath TEXT NOT NULL,
+            PageCount INTEGER NOT NULL,
+            LastReadPage INTEGER NOT NULL DEFAULT 1,
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS StudyChapters (
+            Id TEXT PRIMARY KEY,
+            BookId TEXT NOT NULL REFERENCES StudyBooks(Id) ON DELETE CASCADE,
+            Title TEXT NOT NULL,
+            StartPage INTEGER NOT NULL,
+            EndPage INTEGER NOT NULL,
+            SortOrder INTEGER NOT NULL DEFAULT 0,
+            AudioFileName TEXT NULL,
+            AudioFilePath TEXT NULL,
+            Notes TEXT NULL,
+            CreatedAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_StudyChapters_BookId ON StudyChapters(BookId);
+
+        CREATE TABLE IF NOT EXISTS StudyPlans (
+            Id TEXT PRIMARY KEY,
+            Title TEXT NOT NULL,
+            BookId TEXT NULL REFERENCES StudyBooks(Id) ON DELETE SET NULL,
+            StartDate TEXT NOT NULL,
+            EndDate TEXT NOT NULL,
+            Status TEXT NOT NULL DEFAULT 'Draft',
+            SkipWeekends INTEGER NOT NULL DEFAULT 0,
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_StudyPlans_BookId ON StudyPlans(BookId);
+
+        CREATE TABLE IF NOT EXISTS StudyPlanItems (
+            Id TEXT PRIMARY KEY,
+            PlanId TEXT NOT NULL REFERENCES StudyPlans(Id) ON DELETE CASCADE,
+            ChapterId TEXT NULL REFERENCES StudyChapters(Id) ON DELETE SET NULL,
+            Title TEXT NOT NULL,
+            ScheduledDate TEXT NOT NULL,
+            Status TEXT NOT NULL DEFAULT 'Pending',
+            CompletedDate TEXT NULL,
+            SortOrder INTEGER NOT NULL DEFAULT 0,
+            CreatedAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_StudyPlanItems_PlanId ON StudyPlanItems(PlanId);
+        CREATE INDEX IF NOT EXISTS IX_StudyPlanItems_ScheduledDate ON StudyPlanItems(ScheduledDate);
+
+        CREATE TABLE IF NOT EXISTS FlashCardDecks (
+            Id TEXT PRIMARY KEY,
+            Title TEXT NOT NULL,
+            BookId TEXT NULL REFERENCES StudyBooks(Id) ON DELETE SET NULL,
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_FlashCardDecks_BookId ON FlashCardDecks(BookId);
+
+        CREATE TABLE IF NOT EXISTS FlashCards (
+            Id TEXT PRIMARY KEY,
+            DeckId TEXT NOT NULL REFERENCES FlashCardDecks(Id) ON DELETE CASCADE,
+            ChapterId TEXT NULL REFERENCES StudyChapters(Id) ON DELETE SET NULL,
+            Front TEXT NOT NULL,
+            Back TEXT NOT NULL,
+            Interval INTEGER NOT NULL DEFAULT 0,
+            Repetitions INTEGER NOT NULL DEFAULT 0,
+            EaseFactor REAL NOT NULL DEFAULT 2.5,
+            NextReviewDate TEXT NOT NULL,
+            LastReviewDate TEXT NULL,
+            CreatedAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_FlashCards_DeckId ON FlashCards(DeckId);
+        CREATE INDEX IF NOT EXISTS IX_FlashCards_NextReviewDate ON FlashCards(NextReviewDate);
+
+        CREATE TABLE IF NOT EXISTS CardReviews (
+            Id TEXT PRIMARY KEY,
+            CardId TEXT NOT NULL REFERENCES FlashCards(Id) ON DELETE CASCADE,
+            Quality INTEGER NOT NULL,
+            ReviewedAt TEXT NOT NULL,
+            PreviousInterval INTEGER NOT NULL,
+            NewInterval INTEGER NOT NULL,
+            PreviousEaseFactor REAL NOT NULL,
+            NewEaseFactor REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_CardReviews_CardId ON CardReviews(CardId);
+        CREATE INDEX IF NOT EXISTS IX_CardReviews_ReviewedAt ON CardReviews(ReviewedAt);
+
+        CREATE TABLE IF NOT EXISTS StudySessions (
+            Id TEXT PRIMARY KEY,
+            BookId TEXT NULL REFERENCES StudyBooks(Id) ON DELETE SET NULL,
+            ChapterId TEXT NULL REFERENCES StudyChapters(Id) ON DELETE SET NULL,
+            SessionType TEXT NOT NULL,
+            StartedAt TEXT NOT NULL,
+            EndedAt TEXT NULL,
+            DurationMinutes INTEGER NULL,
+            IsPomodoroSession INTEGER NOT NULL DEFAULT 0,
+            FocusDurationMinutes INTEGER NULL,
+            CreatedAt TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS IX_StudySessions_StartedAt ON StudySessions(StartedAt);
+        CREATE INDEX IF NOT EXISTS IX_StudySessions_BookId ON StudySessions(BookId);
         """;
 }

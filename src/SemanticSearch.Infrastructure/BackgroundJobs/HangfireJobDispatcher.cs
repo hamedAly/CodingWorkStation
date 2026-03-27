@@ -11,4 +11,7 @@ public sealed class HangfireJobDispatcher : IBackgroundJobDispatcher
 
     public void EnqueuePrayerFetch()
         => BackgroundJob.Enqueue<PrayerTimeFetcherJob>(j => j.Execute());
+
+    public void EnqueueStudyReminder()
+        => BackgroundJob.Enqueue<StudyReminderJob>(j => j.Execute());
 }

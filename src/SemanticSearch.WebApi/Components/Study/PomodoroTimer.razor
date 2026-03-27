@@ -1,0 +1,307 @@
+@using System.Globalization
+@using SemanticSearch.Domain.ValueObjects
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+@inject SemanticSearch.WebApi.Services.StudyTimerState TimerState
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<section class="study-section-card study-pomodoro">
+    <div class="study-section-head">
+        <div>
+            <h3>Pomodoro focus</h3>
+            <p>@(HasActiveSession ? "A study session is in progress." : "Run a timed focus block and log it to your dashboard.")</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="banner banner-error">@_errorMessage</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_completionMessage))
+    {
+        <p class="banner banner-success">@_completionMessage</p>
+    }
+
+    <div class="study-pomodoro-shell">
+        <svg class="study-pomodoro-ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="study-pomodoro-ring-track" cx="60" cy="60" r="45"></circle>
+            <circle class="study-pomodoro-ring-progress" cx="60" cy="60" r="45" style="stroke-dasharray:@CircleCircumferenceText; stroke-dashoffset:@CircleOffset;"></circle>
+        </svg>
+        <div class="study-pomodoro-readout">
+            <strong>@FormatDuration(_remainingSeconds)</strong>
+            <span>@(HasActiveSession ? (_isPaused ? "Paused" : _sessionType) : "Ready")</span>
+        </div>
+    </div>
+
+    <div class="study-upload-form study-pomodoro-form">
+        <select value="@_sessionType" @onchange="HandleSessionTypeChanged" disabled="@HasActiveSession">
+            <option value="@StudySessionType.Reading">Reading</option>
+            <option value="@StudySessionType.Review">Review</option>
+            <option value="@StudySessionType.Listening">Listening</option>
+        </select>
+
+        <select value="@_selectedBookId" @onchange="HandleBookChangedAsync" disabled="@HasActiveSession">
+            <option value="">Any book</option>
+            @foreach (var book in _books)
+            {
+                <option value="@book.Id">@book.Title</option>
+            }
+        </select>
+
+        <select value="@_selectedChapterId" @onchange="HandleChapterChanged" disabled="@(HasActiveSession || _chapters.Count == 0)">
+            <option value="">Any chapter</option>
+            @foreach (var chapter in _chapters)
+            {
+                <option value="@chapter.Id">@chapter.Title</option>
+            }
+        </select>
+
+        <input type="number" min="1" max="120" @bind="_focusMinutes" disabled="@HasActiveSession" placeholder="Focus minutes" />
+        <input type="number" min="1" max="30" @bind="_breakMinutes" disabled="@HasActiveSession" placeholder="Break minutes" />
+    </div>
+
+    <div class="study-pomodoro-controls">
+        @if (!HasActiveSession)
+        {
+            <button type="button" @onclick="StartSessionAsync">Start session</button>
+        }
+        else if (_isPaused)
+        {
+            <button type="button" @onclick="ResumeSessionAsync">Resume</button>
+            <button type="button" class="study-danger-button" @onclick="EndSessionAsync" disabled="@_isEnding">End session</button>
+        }
+        else
+        {
+            <button type="button" @onclick="PauseSessionAsync">Pause</button>
+            <button type="button" class="study-danger-button" @onclick="EndSessionAsync" disabled="@_isEnding">End session</button>
+        }
+    </div>
+</section>
+
+@code {
+    private const double CircleRadius = 45d;
+    private readonly string _timerId = $"study-timer-{Guid.NewGuid():N}";
+    private DotNetObjectReference<PomodoroTimer>? _selfReference;
+    private IReadOnlyList<BookSummaryResponse> _books = [];
+    private IReadOnlyList<ChapterResponse> _chapters = [];
+    private StudySessionResponse? _activeSession;
+    private string _sessionType = StudySessionType.Reading;
+    private string? _selectedBookId;
+    private string? _selectedChapterId;
+    private int _focusMinutes = 25;
+    private int _breakMinutes = 5;
+    private int _remainingSeconds = 25 * 60;
+    private bool _isPaused;
+    private bool _shouldSyncTimer;
+    private bool _isEnding;
+    private string? _errorMessage;
+    private string? _completionMessage;
+
+    [Parameter]
+    public EventCallback<StudySessionResponse> OnSessionComplete { get; set; }
+
+    private bool HasActiveSession => _activeSession is not null;
+    private double CircleCircumference => 2 * Math.PI * CircleRadius;
+    private string CircleCircumferenceText => CircleCircumference.ToString("0.##", CultureInfo.InvariantCulture);
+    private string CircleOffset
+    {
+        get
+        {
+            var total = Math.Max(1, HasActiveSession ? TimerState.TotalSeconds : _focusMinutes * 60);
+            var ratio = Math.Clamp((double)_remainingSeconds / total, 0d, 1d);
+            return (CircleCircumference * (1d - ratio)).ToString("0.##", CultureInfo.InvariantCulture);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBooksAsync();
+        await RestoreTimerStateAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+            _selfReference = DotNetObjectReference.Create(this);
+
+        if (_shouldSyncTimer && _selfReference is not null && HasActiveSession && !_isPaused)
+        {
+            _shouldSyncTimer = false;
+            await JS.InvokeVoidAsync("studyTimer.startTimer", _remainingSeconds, _selfReference);
+        }
+    }
+
+    private async Task LoadBooksAsync()
+    {
+        _books = await ApiClient.GetBooksAsync() ?? [];
+    }
+
+    private async Task RestoreTimerStateAsync()
+    {
+        if (!TimerState.HasActiveSession)
+            return;
+
+        _activeSession = TimerState.ActiveSession;
+        _sessionType = TimerState.SessionType;
+        _selectedBookId = TimerState.BookId;
+        _selectedChapterId = TimerState.ChapterId;
+        _focusMinutes = Math.Max(1, TimerState.TotalSeconds / 60);
+        _breakMinutes = TimerState.BreakDurationMinutes;
+        _isPaused = TimerState.IsPaused;
+        _remainingSeconds = TimerState.GetRemainingSeconds();
+        await LoadChaptersAsync(_selectedBookId);
+
+        if (_remainingSeconds <= 0)
+        {
+            await EndSessionCoreAsync(true);
+            return;
+        }
+
+        if (!_isPaused)
+            _shouldSyncTimer = true;
+    }
+
+    private async Task HandleBookChangedAsync(ChangeEventArgs args)
+    {
+        _selectedBookId = Normalize(args.Value?.ToString());
+        _selectedChapterId = null;
+        await LoadChaptersAsync(_selectedBookId);
+    }
+
+    private Task HandleChapterChanged(ChangeEventArgs args)
+    {
+        _selectedChapterId = Normalize(args.Value?.ToString());
+        return Task.CompletedTask;
+    }
+
+    private Task HandleSessionTypeChanged(ChangeEventArgs args)
+    {
+        _sessionType = Normalize(args.Value?.ToString()) ?? StudySessionType.Reading;
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadChaptersAsync(string? bookId)
+    {
+        if (string.IsNullOrWhiteSpace(bookId))
+        {
+            _chapters = [];
+            return;
+        }
+
+        var book = await ApiClient.GetBookAsync(bookId);
+        _chapters = book?.Chapters ?? [];
+        if (_chapters.All(chapter => chapter.Id != _selectedChapterId))
+            _selectedChapterId = null;
+    }
+
+    private async Task StartSessionAsync()
+    {
+        try
+        {
+            _errorMessage = null;
+            _completionMessage = null;
+
+            var request = new StartStudySessionRequest(_sessionType, Normalize(_selectedBookId), Normalize(_selectedChapterId), true, _focusMinutes);
+            _activeSession = await ApiClient.StartStudySessionAsync(request);
+            _remainingSeconds = Math.Max(1, _focusMinutes * 60);
+            _isPaused = false;
+            TimerState.Start(_activeSession, _remainingSeconds, _breakMinutes, _sessionType, Normalize(_selectedBookId), Normalize(_selectedChapterId));
+            _shouldSyncTimer = true;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task PauseSessionAsync()
+    {
+        if (!HasActiveSession)
+            return;
+
+        _remainingSeconds = await JS.InvokeAsync<int>("studyTimer.pauseTimer");
+        TimerState.Pause(_remainingSeconds);
+        _isPaused = true;
+    }
+
+    private async Task ResumeSessionAsync()
+    {
+        if (!HasActiveSession)
+            return;
+
+        TimerState.Resume();
+        _remainingSeconds = TimerState.GetRemainingSeconds();
+        _isPaused = false;
+        if (_selfReference is not null)
+            await JS.InvokeVoidAsync("studyTimer.startTimer", _remainingSeconds, _selfReference);
+    }
+
+    private Task EndSessionAsync() => EndSessionCoreAsync(false);
+
+    [JSInvokable]
+    public Task OnTimerTick(int remainingSeconds)
+    {
+        _remainingSeconds = remainingSeconds;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnTimerComplete() => EndSessionCoreAsync(true);
+
+    private async Task EndSessionCoreAsync(bool completedByTimer)
+    {
+        if (_activeSession is null || _isEnding)
+            return;
+
+        _isEnding = true;
+
+        try
+        {
+            await JS.InvokeVoidAsync("studyTimer.destroy");
+
+            var completedSession = await ApiClient.EndStudySessionAsync(_activeSession.Id);
+            TimerState.Clear();
+            _activeSession = null;
+            _isPaused = false;
+            _remainingSeconds = Math.Max(1, _focusMinutes * 60);
+            _completionMessage = completedByTimer
+                ? $"Focus session complete. Logged {completedSession.DurationMinutes ?? _focusMinutes} minute(s). Take a {_breakMinutes}-minute break."
+                : $"Study session logged for {completedSession.DurationMinutes ?? 0} minute(s).";
+
+            await OnSessionComplete.InvokeAsync(completedSession);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isEnding = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string? Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private static string FormatDuration(int totalSeconds)
+    {
+        var duration = TimeSpan.FromSeconds(Math.Max(0, totalSeconds));
+        return duration.ToString(duration.TotalHours >= 1 ? @"hh\:mm\:ss" : @"mm\:ss", CultureInfo.InvariantCulture);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("studyTimer.destroy", _timerId);
+        }
+        catch
+        {
+        }
+
+        _selfReference?.Dispose();
+    }
+}

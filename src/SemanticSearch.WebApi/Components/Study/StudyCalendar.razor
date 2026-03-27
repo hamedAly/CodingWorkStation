@@ -1,0 +1,52 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+<section class="study-section-card">
+    <div class="study-section-head study-calendar-head">
+        <h3>@_month.ToString("MMMM yyyy")</h3>
+        <div class="study-chapter-actions">
+            <button type="button" @onclick="PreviousMonthAsync">Previous</button>
+            <button type="button" @onclick="NextMonthAsync">Next</button>
+        </div>
+    </div>
+
+    <div class="study-calendar">
+        @foreach (var day in _days)
+        {
+            <div class="study-calendar-cell">
+                <strong>@day.Date.Day</strong>
+                @foreach (var item in day.Items)
+                {
+                    <span class="study-calendar-pill">@item.Title</span>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    private DateTime _month = new(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+    private IReadOnlyList<CalendarDayResponse> _days = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _days = await ApiClient.GetCalendarDataAsync(_month.Year, _month.Month) ?? [];
+    }
+
+    private async Task PreviousMonthAsync()
+    {
+        _month = _month.AddMonths(-1);
+        await LoadAsync();
+    }
+
+    private async Task NextMonthAsync()
+    {
+        _month = _month.AddMonths(1);
+        await LoadAsync();
+    }
+}

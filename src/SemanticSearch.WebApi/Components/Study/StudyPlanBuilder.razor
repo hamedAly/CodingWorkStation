@@ -1,0 +1,98 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+<section class="study-section-card">
+    <div class="study-section-head">
+        <h3>Create plan</h3>
+    </div>
+
+    <div class="study-upload-form">
+        <input type="text" placeholder="Plan title" @bind="_title" />
+        <select @bind="_bookId">
+            <option value="">Choose a book (optional)</option>
+            @foreach (var book in _books)
+            {
+                <option value="@book.Id">@book.Title</option>
+            }
+        </select>
+        <label>Start date <input type="date" value="@_startDateString" @onchange="OnStartDateChanged" /></label>
+        <label>End date <input type="date" value="@_endDateString" @onchange="OnEndDateChanged" /></label>
+        <label><input type="checkbox" @bind="_skipWeekends" /> Skip weekends</label>
+        <button type="button" @onclick="CreateAsync">Create plan</button>
+        @if (_createdPlanId is not null)
+        {
+            <button type="button" @onclick="AutoGenerateAsync">Auto-generate from chapters</button>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="study-inline-error">@_errorMessage</p>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<BookSummaryResponse> _books = [];
+    private string _title = string.Empty;
+    private string? _bookId;
+    private bool _skipWeekends;
+    private string _startDateString = DateTime.UtcNow.Date.ToString("yyyy-MM-dd");
+    private string _endDateString = DateTime.UtcNow.Date.AddDays(7).ToString("yyyy-MM-dd");
+    private string? _createdPlanId;
+    private string? _errorMessage;
+
+    [Parameter]
+    public EventCallback<string> OnPlanSelected { get; set; }
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _books = await ApiClient.GetBooksAsync() ?? [];
+    }
+
+    private void OnStartDateChanged(ChangeEventArgs args)
+    {
+        _startDateString = args.Value?.ToString() ?? _startDateString;
+    }
+
+    private void OnEndDateChanged(ChangeEventArgs args)
+    {
+        _endDateString = args.Value?.ToString() ?? _endDateString;
+    }
+
+    private async Task CreateAsync()
+    {
+        try
+        {
+            _errorMessage = null;
+            var plan = await ApiClient.CreateStudyPlanAsync(new CreateStudyPlanRequest(_title, string.IsNullOrWhiteSpace(_bookId) ? null : _bookId, DateTime.Parse(_startDateString), DateTime.Parse(_endDateString), _skipWeekends));
+            _createdPlanId = plan.Id;
+            await OnChanged.InvokeAsync();
+            await OnPlanSelected.InvokeAsync(plan.Id);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task AutoGenerateAsync()
+    {
+        if (_createdPlanId is null)
+            return;
+
+        try
+        {
+            _errorMessage = null;
+            await ApiClient.AutoGeneratePlanItemsAsync(_createdPlanId);
+            await OnChanged.InvokeAsync();
+            await OnPlanSelected.InvokeAsync(_createdPlanId);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+}

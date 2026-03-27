@@ -223,6 +223,35 @@
         </div>
     </section>
 
+    <section class="settings-card">
+        <div class="settings-card-header">
+            <h2>Study Reminders</h2>
+            <span class="badge @(_studyReminderEnabled ? "badge-success" : "badge-neutral")">
+                @(_studyReminderEnabled ? "Enabled" : "Disabled")
+            </span>
+        </div>
+        <p class="settings-hint">Send a daily Slack reminder with today's due study plan items and flashcards.</p>
+
+        <div class="form-check">
+            <input type="checkbox" @bind="_studyReminderEnabled" id="study-reminder-enabled" />
+            <label for="study-reminder-enabled">Enable study reminders</label>
+        </div>
+
+        <div class="form-group">
+            <label>Reminder time</label>
+            <input type="time" value="@_studyReminderTime" @onchange="HandleStudyReminderTimeChanged" class="form-control" />
+        </div>
+
+        <div class="button-row">
+            <button class="btn btn-primary" @onclick="SaveIntegrationSettings" disabled="@_settingsSaving">
+                @(_settingsSaving ? "Saving…" : "Save")
+            </button>
+            <button class="btn btn-secondary" @onclick="TriggerStudyReminder" disabled="@_jobTriggering">
+                @(_jobTriggering ? "Triggering…" : "Trigger Now")
+            </button>
+        </div>
+    </section>
+
 </div>
 
 @code {
@@ -252,6 +281,8 @@
     private string _prayerCountry = string.Empty;
     private int _prayerMethod = 4;
     private bool _prayerEnabled;
+    private bool _studyReminderEnabled;
+    private string _studyReminderTime = "08:00";
     private bool _settingsSaving;
     private string? _settingsMessage;
     private bool _jobTriggering;
@@ -289,6 +320,8 @@
                 _prayerCountry = _settings.PrayerCountry;
                 _prayerMethod = _settings.PrayerMethod;
                 _prayerEnabled = _settings.PrayerEnabled;
+                _studyReminderEnabled = _settings.StudyReminderEnabled;
+                _studyReminderTime = _settings.StudyReminderTime;
             }
         }
         catch (Exception ex)
@@ -442,7 +475,9 @@
                 _prayerCity,
                 _prayerCountry,
                 _prayerMethod,
-                _prayerEnabled));
+                _prayerEnabled,
+                _studyReminderEnabled,
+                _studyReminderTime));
             _settingsMessage = "Settings saved.";
             _settings = await Api.GetIntegrationSettingsAsync();
         }
@@ -458,6 +493,12 @@
 
     private Task TriggerStandup() => TriggerJob("standup");
     private Task TriggerPrayerFetch() => TriggerJob("prayer-fetch");
+    private Task TriggerStudyReminder() => TriggerJob("study-reminder");
+
+    private void HandleStudyReminderTimeChanged(ChangeEventArgs args)
+    {
+        _studyReminderTime = args.Value?.ToString() ?? _studyReminderTime;
+    }
 
     private async Task TriggerJob(string jobName)
     {

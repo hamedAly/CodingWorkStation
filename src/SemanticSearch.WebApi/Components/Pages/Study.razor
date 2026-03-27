@@ -1,0 +1,70 @@
+@page "/study"
+@page "/study/book/{BookId}"
+@page "/study/plans"
+@page "/study/plans/{PlanId}"
+@using SemanticSearch.WebApi.Components.Study
+@inject NavigationManager NavigationManager
+
+<PageTitle>Study Hub</PageTitle>
+
+<nav class="study-tab-nav">
+    <a href="/study">Library</a>
+    <a href="/study/plans">Plans</a>
+    <a href="/study/plans#calendar">Calendar</a>
+    <a href="/study/plans#today">Today</a>
+</nav>
+
+@if (!string.IsNullOrWhiteSpace(BookId))
+{
+    <BookDetail BookId="@BookId" />
+}
+else if (CurrentPath.StartsWith("study/plans", StringComparison.OrdinalIgnoreCase))
+{
+    <div class="study-book-detail">
+        <div class="study-book-sidebar">
+            <StudyPlanBuilder OnChanged="HandlePlansChangedAsync" OnPlanSelected="SelectPlanAsync" />
+            <div id="today">
+                <TodayStudyPanel />
+            </div>
+        </div>
+        <div>
+            <StudyPlanView PlanId="@SelectedPlanId" OnChanged="HandlePlansChangedAsync" />
+            <div id="calendar" class="study-calendar-shell">
+                <StudyCalendar />
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <StudyLibrary />
+}
+
+@code {
+    [Parameter]
+    public string? BookId { get; set; }
+
+    [Parameter]
+    public string? PlanId { get; set; }
+
+    private string? SelectedPlanId { get; set; }
+
+    private string CurrentPath
+        => NavigationManager.ToBaseRelativePath(NavigationManager.Uri)
+            .Split('?', '#')[0]
+            .Trim('/');
+
+    protected override void OnParametersSet()
+    {
+        SelectedPlanId = PlanId;
+    }
+
+    private Task HandlePlansChangedAsync() => Task.CompletedTask;
+
+    private Task SelectPlanAsync(string planId)
+    {
+        SelectedPlanId = planId;
+        NavigationManager.NavigateTo($"/study/plans/{planId}");
+        return Task.CompletedTask;
+    }
+}

@@ -21,6 +21,9 @@ public static class BreadcrumbMap
         { "/search", "Search" },
         { "/explorer", "Explorer" },
         { "/assistant", "AI Assistant" },
+        { "/study", "Study Library" },
+        { "/study/review", "Review Cards" },
+        { "/study/dashboard", "Study Dashboard" },
     };
 
     public static IReadOnlyList<BreadcrumbSegment> GetBreadcrumbs(string path)

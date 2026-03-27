@@ -2,12 +2,14 @@ using System.Net.Http.Json;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Forms;
 using SemanticSearch.WebApi.Contracts.Architecture;
 using SemanticSearch.WebApi.Contracts.Files;
 using SemanticSearch.WebApi.Contracts.Projects;
 using SemanticSearch.WebApi.Contracts.Quality;
 using SemanticSearch.WebApi.Contracts.Search;
 using SemanticSearch.WebApi.Contracts.Slack;
+using SemanticSearch.WebApi.Contracts.Study;
 using SemanticSearch.WebApi.Contracts.Tfs;
 
 namespace SemanticSearch.WebApi.Services;
@@ -22,7 +24,7 @@ public sealed class WorkspaceApiClient
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(navigationManager.BaseUri),
-            Timeout = TimeSpan.FromMinutes(5)
+            Timeout = TimeSpan.FromMinutes(20)
         };
     }
 
@@ -163,6 +165,163 @@ public sealed class WorkspaceApiClient
             new AddWorkItemCommentRequest(text),
             cancellationToken);
 
+    public Task<IReadOnlyList<BookSummaryResponse>?> GetBooksAsync(CancellationToken cancellationToken = default)
+        => GetAsync<IReadOnlyList<BookSummaryResponse>>("api/study/books", cancellationToken);
+
+    public Task<BookDetailResponse?> GetBookAsync(string bookId, CancellationToken cancellationToken = default)
+        => GetAsync<BookDetailResponse>($"api/study/books/{Uri.EscapeDataString(bookId)}", cancellationToken);
+
+    public string GetBookPdfUrl(string bookId)
+        => new Uri(_httpClient.BaseAddress!, $"api/study/books/{Uri.EscapeDataString(bookId)}/pdf").ToString();
+
+    public async Task<BookDetailResponse> AddBookAsync(string title, string? author, string? description, IBrowserFile pdfFile, CancellationToken cancellationToken = default)
+    {
+        using var content = new MultipartFormDataContent();
+        content.Add(new StringContent(title), "Title");
+        if (!string.IsNullOrWhiteSpace(author))
+            content.Add(new StringContent(author), "Author");
+        if (!string.IsNullOrWhiteSpace(description))
+            content.Add(new StringContent(description), "Description");
+
+        await using var stream = pdfFile.OpenReadStream(209_715_200, cancellationToken);
+        var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(pdfFile.ContentType);
+        content.Add(fileContent, "PdfFile", pdfFile.Name);
+
+        using var response = await _httpClient.PostAsync("api/study/books", content, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var payload = await response.Content.ReadFromJsonAsync<BookDetailResponse>(cancellationToken: cancellationToken);
+        return payload ?? throw new InvalidOperationException("The server returned an empty response.");
+    }
+
+    public Task<BookDetailResponse> FinalizeBookImportAsync(string bookId, FinalizeBookImportRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<FinalizeBookImportRequest, BookDetailResponse>($"api/study/books/{Uri.EscapeDataString(bookId)}/auto-setup", request, cancellationToken);
+
+    public Task<BookDetailResponse> UpdateBookAsync(string bookId, UpdateBookRequest request, CancellationToken cancellationToken = default)
+        => PutAsync<UpdateBookRequest, BookDetailResponse>($"api/study/books/{Uri.EscapeDataString(bookId)}", request, cancellationToken);
+
+    public async Task DeleteBookAsync(string bookId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.DeleteAsync($"api/study/books/{Uri.EscapeDataString(bookId)}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task UpdateLastReadPageAsync(string bookId, int page, CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/study/books/{Uri.EscapeDataString(bookId)}/last-read-page")
+        {
+            Content = JsonContent.Create(new UpdateLastReadPageRequest(page))
+        };
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public Task<ChapterResponse> AddChapterAsync(string bookId, AddChapterRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<AddChapterRequest, ChapterResponse>($"api/study/books/{Uri.EscapeDataString(bookId)}/chapters", request, cancellationToken);
+
+    public Task<ChapterResponse> UpdateChapterAsync(string bookId, string chapterId, UpdateChapterRequest request, CancellationToken cancellationToken = default)
+        => PutAsync<UpdateChapterRequest, ChapterResponse>($"api/study/books/{Uri.EscapeDataString(bookId)}/chapters/{Uri.EscapeDataString(chapterId)}", request, cancellationToken);
+
+    public async Task DeleteChapterAsync(string bookId, string chapterId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.DeleteAsync($"api/study/books/{Uri.EscapeDataString(bookId)}/chapters/{Uri.EscapeDataString(chapterId)}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task UpdateChapterNotesAsync(string bookId, string chapterId, string? notes, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.PutAsJsonAsync(
+            $"api/study/books/{Uri.EscapeDataString(bookId)}/chapters/{Uri.EscapeDataString(chapterId)}/notes",
+            new UpdateChapterNotesRequest(notes),
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task UploadChapterAudioAsync(string bookId, string chapterId, IBrowserFile audioFile, CancellationToken cancellationToken = default)
+    {
+        using var content = new MultipartFormDataContent();
+        await using var stream = audioFile.OpenReadStream(104_857_600, cancellationToken);
+        var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(audioFile.ContentType);
+        content.Add(fileContent, "AudioFile", audioFile.Name);
+
+        using var response = await _httpClient.PostAsync($"api/study/books/{Uri.EscapeDataString(bookId)}/chapters/{Uri.EscapeDataString(chapterId)}/audio", content, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public string GetChapterAudioUrl(string bookId, string chapterId)
+        => new Uri(_httpClient.BaseAddress!, $"api/study/books/{Uri.EscapeDataString(bookId)}/chapters/{Uri.EscapeDataString(chapterId)}/audio").ToString();
+
+    public Task<IReadOnlyList<StudyPlanSummaryResponse>?> GetStudyPlansAsync(CancellationToken cancellationToken = default)
+        => GetAsync<IReadOnlyList<StudyPlanSummaryResponse>>("api/study/plans", cancellationToken);
+
+    public Task<StudyPlanDetailResponse> CreateStudyPlanAsync(CreateStudyPlanRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<CreateStudyPlanRequest, StudyPlanDetailResponse>("api/study/plans", request, cancellationToken);
+
+    public Task<StudyPlanDetailResponse?> GetStudyPlanAsync(string planId, CancellationToken cancellationToken = default)
+        => GetAsync<StudyPlanDetailResponse>($"api/study/plans/{Uri.EscapeDataString(planId)}", cancellationToken);
+
+    public Task<StudyPlanDetailResponse> AutoGeneratePlanItemsAsync(string planId, CancellationToken cancellationToken = default)
+        => PostAsync<object, StudyPlanDetailResponse>($"api/study/plans/{Uri.EscapeDataString(planId)}/auto-generate", new { }, cancellationToken);
+
+    public Task<PlanItemResponse> UpdatePlanItemStatusAsync(string planId, string itemId, string status, CancellationToken cancellationToken = default)
+        => PatchAsync<UpdatePlanItemStatusRequest, PlanItemResponse>($"api/study/plans/{Uri.EscapeDataString(planId)}/items/{Uri.EscapeDataString(itemId)}/status", new UpdatePlanItemStatusRequest(status), cancellationToken);
+
+    public Task<TodayStudyItemsResponse?> GetTodayStudyItemsAsync(CancellationToken cancellationToken = default)
+        => GetAsync<TodayStudyItemsResponse>("api/study/today", cancellationToken);
+
+    public Task<IReadOnlyList<CalendarDayResponse>?> GetCalendarDataAsync(int year, int month, CancellationToken cancellationToken = default)
+        => GetAsync<IReadOnlyList<CalendarDayResponse>>($"api/study/calendar?year={year}&month={month}", cancellationToken);
+
+    public Task<IReadOnlyList<DeckSummaryResponse>?> GetDecksAsync(CancellationToken cancellationToken = default)
+        => GetAsync<IReadOnlyList<DeckSummaryResponse>>("api/study/decks", cancellationToken);
+
+    public Task<DeckDetailResponse> CreateDeckAsync(CreateDeckRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<CreateDeckRequest, DeckDetailResponse>("api/study/decks", request, cancellationToken);
+
+    public Task<DeckDetailResponse?> GetDeckAsync(string deckId, CancellationToken cancellationToken = default)
+        => GetAsync<DeckDetailResponse>($"api/study/decks/{Uri.EscapeDataString(deckId)}", cancellationToken);
+
+    public async Task DeleteDeckAsync(string deckId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.DeleteAsync($"api/study/decks/{Uri.EscapeDataString(deckId)}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public Task<FlashCardResponse> AddFlashCardAsync(string deckId, AddFlashCardRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<AddFlashCardRequest, FlashCardResponse>($"api/study/decks/{Uri.EscapeDataString(deckId)}/cards", request, cancellationToken);
+
+    public Task<FlashCardResponse> UpdateFlashCardAsync(string deckId, string cardId, AddFlashCardRequest request, CancellationToken cancellationToken = default)
+        => PutAsync<AddFlashCardRequest, FlashCardResponse>($"api/study/decks/{Uri.EscapeDataString(deckId)}/cards/{Uri.EscapeDataString(cardId)}", request, cancellationToken);
+
+    public async Task DeleteFlashCardAsync(string deckId, string cardId, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.DeleteAsync($"api/study/decks/{Uri.EscapeDataString(deckId)}/cards/{Uri.EscapeDataString(cardId)}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public Task<GeneratedCardsResponse> GenerateCardsFromChapterAsync(string deckId, string chapterId, CancellationToken cancellationToken = default)
+        => PostAsync<object, GeneratedCardsResponse>($"api/study/decks/{Uri.EscapeDataString(deckId)}/generate-from-chapter/{Uri.EscapeDataString(chapterId)}", new { }, cancellationToken);
+
+    public Task<DueCardsResponse?> GetDueCardsAsync(CancellationToken cancellationToken = default)
+        => GetAsync<DueCardsResponse>("api/study/review/due", cancellationToken);
+
+    public Task<ReviewResultResponse> ReviewCardAsync(string cardId, int quality, CancellationToken cancellationToken = default)
+        => PostAsync<ReviewCardRequest, ReviewResultResponse>($"api/study/review/{Uri.EscapeDataString(cardId)}", new ReviewCardRequest(quality), cancellationToken);
+
+    public Task<ReviewStatsResponse?> GetReviewStatsAsync(CancellationToken cancellationToken = default)
+        => GetAsync<ReviewStatsResponse>("api/study/review/stats", cancellationToken);
+
+    public Task<StudySessionResponse> StartStudySessionAsync(StartStudySessionRequest request, CancellationToken cancellationToken = default)
+        => PostAsync<StartStudySessionRequest, StudySessionResponse>("api/study/sessions", request, cancellationToken);
+
+    public Task<StudySessionResponse> EndStudySessionAsync(string sessionId, CancellationToken cancellationToken = default)
+        => PatchAsync<object, StudySessionResponse>($"api/study/sessions/{Uri.EscapeDataString(sessionId)}/end", new { }, cancellationToken);
+
+    public Task<StudyDashboardResponse?> GetStudyDashboardAsync(CancellationToken cancellationToken = default)
+        => GetAsync<StudyDashboardResponse>("api/study/dashboard", cancellationToken);
+
     private static string BuildGraphUrl(string projectKey, string? ns, string? filePath)
     {
         var url = $"api/architecture/{Uri.EscapeDataString(projectKey)}/dependency-graph";
@@ -195,6 +354,14 @@ public sealed class WorkspaceApiClient
     {
         using var response = await _httpClient.PutAsJsonAsync(url, request, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    private async Task<TResponse> PutAsync<TRequest, TResponse>(string url, TRequest request, CancellationToken cancellationToken)
+    {
+        using var response = await _httpClient.PutAsJsonAsync(url, request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+        var payload = await response.Content.ReadFromJsonAsync<TResponse>(cancellationToken: cancellationToken);
+        return payload ?? throw new InvalidOperationException("The server returned an empty response.");
     }
 
     private async Task<TResponse> PatchAsync<TRequest, TResponse>(

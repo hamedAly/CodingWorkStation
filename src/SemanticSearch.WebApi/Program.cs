@@ -3,6 +3,7 @@ using Hangfire;
 using Hangfire.InMemory;
 using MediatR;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http.Features;
 using SemanticSearch.Application.Common;
 using SemanticSearch.Application.Common.Behaviors;
 using SemanticSearch.Infrastructure.BackgroundJobs;
@@ -24,6 +25,16 @@ var semanticSearchOptions = builder.Configuration
     .GetSection(SemanticSearchOptions.SectionName)
     .Get<SemanticSearchOptions>() ?? new SemanticSearchOptions();
 
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 209_715_200;
+});
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 209_715_200;
+});
+
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssemblyContaining<Program>();
@@ -37,6 +48,7 @@ builder.Services.AddInfrastructure(builder.Environment, semanticSearchOptions);
 builder.Services.AddControllers();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddScoped<WorkspaceApiClient>();
+builder.Services.AddScoped<StudyTimerState>();
 builder.Services.AddSingleton<MarkdownRenderService>();
 builder.Services.AddScoped<AiStreamEventWriter>();
 
@@ -67,6 +79,9 @@ builder.Services.AddHttpClient("AladhanClient", client =>
 });
 
 var app = builder.Build();
+
+Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "data", "study", "books"));
+Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "data", "study", "audio"));
 
 await app.Services.GetRequiredService<SqliteVectorStore>().InitializeAsync();
 await app.Services.GetRequiredService<SemanticSearch.Application.Common.Interfaces.IAiAssistantModelProvider>()

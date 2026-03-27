@@ -1,0 +1,115 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+@inject IJSRuntime JS
+
+<section class="study-section-card">
+    <div class="study-section-head">
+        <div>
+            <h3>Review due cards</h3>
+            <p>@_cards.Count cards waiting today</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_message))
+    {
+        <p class="banner banner-success">@_message</p>
+    }
+
+    @if (CurrentCard is null)
+    {
+        <div class="empty-state">
+            <strong>All caught up!</strong>
+            @if (_nextDueDate is { } nextDueDate && nextDueDate > DateTime.Today)
+            {
+                <p>Next review due on @nextDueDate.ToString("D") (in @((nextDueDate.Date - DateTime.Today).Days) day(s)).</p>
+            }
+            else if (_nextDueDate is { } dueToday)
+            {
+                <p>Next review unlocks on @dueToday.ToString("D").</p>
+            }
+        </div>
+    }
+    else
+    {
+        <p class="study-review-progress">@(_currentIndex + 1) of @_cards.Count</p>
+        <button type="button" class="study-flash-card" id="@CardElementId" @onclick="FlipAsync">
+            <span class="study-flash-card-inner">
+                <span class="study-flash-card-front">@CurrentCard.Front</span>
+                <span class="study-flash-card-back">@CurrentCard.Back</span>
+            </span>
+        </button>
+        <div class="study-rating-buttons">
+            @foreach (var rating in Ratings)
+            {
+                <button type="button" @onclick="() => RateAsync(rating.Quality)">@rating.Label</button>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private readonly (int Quality, string Label)[] Ratings =
+    [
+        (0, "Blackout"),
+        (1, "Wrong"),
+        (2, "Hard"),
+        (3, "Pass"),
+        (4, "Good"),
+        (5, "Easy")
+    ];
+
+    private List<DueCardResponse> _cards = [];
+    private int _currentIndex;
+    private string? _message;
+    private DateTime? _nextDueDate;
+
+    private DueCardResponse? CurrentCard
+        => _currentIndex >= 0 && _currentIndex < _cards.Count ? _cards[_currentIndex] : null;
+
+    private string CardElementId
+        => CurrentCard is null ? "study-flash-card-empty" : $"study-flash-card-{CurrentCard.CardId}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDueCardsAsync();
+    }
+
+    private async Task FlipAsync()
+    {
+        if (CurrentCard is null)
+            return;
+
+        await JS.InvokeVoidAsync("studyFlashCard.flipCard", CardElementId);
+    }
+
+    private async Task RateAsync(int quality)
+    {
+        if (CurrentCard is null)
+            return;
+
+        var result = await ApiClient.ReviewCardAsync(CurrentCard.CardId, quality);
+        _message = $"Next review in {result.NewInterval} day(s) on {result.NextReviewDate:d}.";
+
+        _cards.RemoveAt(_currentIndex);
+        if (_currentIndex >= _cards.Count)
+            _currentIndex = Math.Max(0, _cards.Count - 1);
+
+        if (_cards.Count == 0)
+            await LoadNextDueDateAsync();
+    }
+
+    private async Task LoadDueCardsAsync()
+    {
+        var due = await ApiClient.GetDueCardsAsync();
+        _cards = due?.Cards.ToList() ?? [];
+        _nextDueDate = null;
+        if (_cards.Count == 0)
+            await LoadNextDueDateAsync();
+    }
+
+    private async Task LoadNextDueDateAsync()
+    {
+        var stats = await ApiClient.GetReviewStatsAsync();
+        _nextDueDate = stats?.Forecast.OrderBy(day => day.Date).Select(day => (DateTime?)day.Date).FirstOrDefault();
+    }
+}

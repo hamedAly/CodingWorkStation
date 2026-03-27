@@ -1,0 +1,150 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using SemanticSearch.WebApi.Contracts.Study
+@inject IJSRuntime JS
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+@inject NavigationManager NavigationManager
+
+<section class="study-section-card">
+    <div class="study-section-head">
+        <div>
+            <p class="eyebrow">Study Hub</p>
+            <h1>Study library</h1>
+            <p class="lede">Upload PDFs, pick up where you left off, and organize chapters for the rest of the study workflow.</p>
+        </div>
+    </div>
+
+    <div class="study-upload-form">
+        <input type="text" placeholder="Book title" @bind="_title" />
+        <input type="text" placeholder="Author" @bind="_author" />
+        <textarea placeholder="Description" @bind="_description"></textarea>
+        <InputFile OnChange="HandleFileSelected" accept=".pdf,application/pdf" />
+        <button type="button" @onclick="UploadAsync" disabled="@(_selectedFile is null || _isUploading)">
+            @(_isUploading ? "Preparing book..." : "Add book")
+        </button>
+    </div>
+
+    @if (_isUploading)
+    {
+        <div class="study-progress-card study-upload-progress" role="status" aria-live="polite" aria-busy="true">
+            <div class="study-progress-head">
+                <strong>Preparing your study book</strong>
+                <span>@_uploadProgressPercent%</span>
+            </div>
+            <div class="study-progress-bar">
+                <span class="study-progress-bar-fill study-upload-progress-fill" style="@($"width: {_uploadProgressPercent}%")"></span>
+            </div>
+            <p>@_uploadProgressMessage</p>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="study-inline-error">@_errorMessage</p>
+    }
+
+    <div class="study-library-grid">
+        @foreach (var book in _books)
+        {
+            <button type="button" class="study-book-card" @onclick="() => OpenBook(book.Id)">
+                <strong>@book.Title</strong>
+                <span>@(book.Author ?? "Unknown author")</span>
+                <span>@book.PageCount pages</span>
+                <span>@book.ChapterCount chapters</span>
+            </button>
+        }
+    </div>
+</section>
+
+@code {
+    private IReadOnlyList<BookSummaryResponse> _books = [];
+    private string _title = string.Empty;
+    private string? _author;
+    private string? _description;
+    private IBrowserFile? _selectedFile;
+    private string? _errorMessage;
+    private bool _isUploading;
+    private int _uploadProgressPercent;
+    private string _uploadProgressMessage = "Waiting to start.";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _books = await ApiClient.GetBooksAsync() ?? [];
+        StateHasChanged();
+    }
+
+    private void HandleFileSelected(InputFileChangeEventArgs args)
+    {
+        _selectedFile = args.File;
+    }
+
+    private async Task UploadAsync()
+    {
+        if (_selectedFile is null)
+            return;
+
+        try
+        {
+            _isUploading = true;
+            _errorMessage = null;
+            await ReportProgressAsync(12, "Uploading the PDF to the study library...");
+            var book = await ApiClient.AddBookAsync(_title, _author, _description, _selectedFile);
+            await ReportProgressAsync(38, "Reading the PDF structure and contents...");
+            var structure = await JS.InvokeAsync<DetectedBookStructure>(
+                "studyPdfViewer.inspect",
+                ApiClient.GetBookPdfUrl(book.Id),
+                book.Title);
+            await ReportProgressAsync(72, "Using the local model to detect study units and build the first plan...");
+            await ApiClient.FinalizeBookImportAsync(
+                book.Id,
+                new FinalizeBookImportRequest(
+                    structure.PageCount,
+                    structure.Chapters,
+                    structure.TableOfContentsText,
+                    structure.PreviewText));
+            await ReportProgressAsync(100, "Book is ready.");
+            _title = string.Empty;
+            _author = null;
+            _description = null;
+            _selectedFile = null;
+            await LoadAsync();
+            NavigationManager.NavigateTo($"/study/book/{book.Id}");
+        }
+        catch (OperationCanceledException)
+        {
+            _uploadProgressPercent = 0;
+            _uploadProgressMessage = "The upload was interrupted.";
+            _errorMessage = "The upload or auto-setup request was canceled before it finished. Retry the book after a refresh if the server is still running.";
+        }
+        catch (Exception ex)
+        {
+            _uploadProgressPercent = 0;
+            _uploadProgressMessage = "The book setup failed.";
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isUploading = false;
+        }
+    }
+
+    private void OpenBook(string bookId) => NavigationManager.NavigateTo($"/study/book/{bookId}");
+
+    private async Task ReportProgressAsync(int percent, string message)
+    {
+        _uploadProgressPercent = Math.Clamp(percent, 0, 100);
+        _uploadProgressMessage = message;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+    }
+
+    private sealed record DetectedBookStructure(
+        int PageCount,
+        IReadOnlyList<DetectedChapterRequest> Chapters,
+        string? TableOfContentsText,
+        string? PreviewText);
+}

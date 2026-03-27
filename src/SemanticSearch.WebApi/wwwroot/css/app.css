@@ -1319,6 +1319,598 @@ code,
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.study-library-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.study-book-card,
+.study-section-card {
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 18px 45px -32px rgba(15, 23, 42, 0.45);
+}
+
+.study-book-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 1rem;
+    text-align: left;
+}
+
+.study-book-detail {
+    display: grid;
+    gap: 1.25rem;
+    grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    align-items: start;
+    min-height: calc(100vh - 12rem);
+}
+
+.study-book-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-height: 0;
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+}
+
+.study-book-main {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+    align-content: start;
+}
+
+.study-section-card {
+    padding: 1rem;
+}
+
+.study-section-head {
+    margin-bottom: 1rem;
+}
+
+.study-upload-form {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.study-upload-progress {
+    margin-top: 1rem;
+}
+
+.study-upload-progress-fill,
+.study-progress-bar-fill {
+    transition: width 0.25s ease;
+}
+
+.study-upload-form input,
+.study-upload-form select,
+.study-upload-form textarea,
+.study-page-nav input {
+    width: 100%;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    background: #fff;
+}
+
+.study-upload-form button,
+.study-page-nav button,
+.study-chapter-actions button,
+.study-pomodoro-controls button,
+.study-inline-actions button {
+    border: 0;
+    border-radius: 999px;
+    padding: 0.7rem 1rem;
+    background: #0f766e;
+    color: #fff;
+    font-weight: 700;
+}
+
+.study-danger-button {
+    background: #b91c1c;
+}
+
+.study-pdf-viewer {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.study-pdf-canvas-shell {
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 1rem;
+    background: #f8fafc;
+    min-height: 70vh;
+    padding: 1rem;
+}
+
+.study-pdf-canvas-shell canvas {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+}
+
+.study-page-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.study-page-nav input {
+    max-width: 7rem;
+}
+
+.study-chapter-list {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.study-chapter-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.study-chapter-list-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 0.25rem;
+}
+
+.study-chapter-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: flex-start;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 0.85rem;
+    padding: 0.8rem;
+}
+
+.study-chapter-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    background: transparent;
+    border: 0;
+    text-align: left;
+    min-width: 0;
+}
+
+.study-chapter-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.study-inline-error {
+    color: #b91c1c;
+    font-weight: 600;
+}
+
+@media (max-width: 960px) {
+    .study-book-detail {
+        grid-template-columns: 1fr;
+        min-height: auto;
+    }
+
+    .study-book-sidebar {
+        position: static;
+        max-height: none;
+    }
+}
+
+.study-tab-nav {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.study-tab-nav a {
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.08);
+    color: #0f766e;
+    font-weight: 700;
+}
+
+.study-tab-nav button {
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    border: 0;
+    background: rgba(15, 118, 110, 0.08);
+    color: #0f766e;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.study-tab-active {
+    background: rgba(15, 118, 110, 0.18) !important;
+}
+
+.study-plan-list {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.study-plan-item {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.85rem 1rem;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(248, 250, 252, 0.88);
+}
+
+.study-plan-progress {
+    height: 0.85rem;
+    border-radius: 999px;
+    overflow: hidden;
+    background: rgba(148, 163, 184, 0.18);
+    margin-bottom: 1rem;
+}
+
+.study-plan-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #0f766e, #14b8a6);
+}
+
+.study-calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.study-deck-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.study-deck-card {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 1rem;
+    background: rgba(248, 250, 252, 0.92);
+    padding: 1rem;
+    text-align: left;
+    display: grid;
+    gap: 0.45rem;
+}
+
+.study-deck-card.selected {
+    border-color: rgba(15, 118, 110, 0.45);
+    box-shadow: 0 20px 40px rgba(15, 118, 110, 0.12);
+}
+
+.study-inline-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.study-card-editor textarea {
+    min-height: 120px;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    padding: 0.85rem 1rem;
+    font: inherit;
+    resize: vertical;
+}
+
+.study-flash-card {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    perspective: 1200px;
+    cursor: pointer;
+}
+
+.study-flash-card-inner {
+    display: block;
+    position: relative;
+    min-height: 320px;
+    transform-style: preserve-3d;
+    transition: transform 0.45s ease;
+}
+
+.study-flash-card.flipped .study-flash-card-inner {
+    transform: rotateY(180deg);
+}
+
+.study-flash-card-front,
+.study-flash-card-back {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    border-radius: 1.5rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: var(--shadow-md);
+    backface-visibility: hidden;
+    font-size: 1.1rem;
+    line-height: 1.7;
+}
+
+.study-flash-card-front {
+    background: linear-gradient(135deg, rgba(248, 250, 252, 0.98), rgba(207, 250, 254, 0.9));
+}
+
+.study-flash-card-back {
+    transform: rotateY(180deg);
+    background: linear-gradient(135deg, rgba(255, 251, 235, 0.98), rgba(254, 240, 138, 0.85));
+}
+
+.study-rating-buttons {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.study-rating-buttons button:nth-child(1) { background: #7f1d1d; }
+.study-rating-buttons button:nth-child(2) { background: #b91c1c; }
+.study-rating-buttons button:nth-child(3) { background: #d97706; }
+.study-rating-buttons button:nth-child(4) { background: #65a30d; }
+.study-rating-buttons button:nth-child(5) { background: #16a34a; }
+.study-rating-buttons button:nth-child(6) { background: #15803d; }
+
+.study-review-progress {
+    margin-bottom: 1rem;
+    color: var(--muted);
+    font-size: 0.92rem;
+}
+
+.study-audio-player {
+    margin-top: 1rem;
+    display: grid;
+    gap: 0.85rem;
+    padding: 1rem;
+    border-radius: 1rem;
+    background: rgba(248, 250, 252, 0.92);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.study-audio-element {
+    width: 100%;
+}
+
+.study-audio-speed {
+    display: inline-flex;
+    gap: 0.5rem;
+    align-items: center;
+    font-weight: 600;
+}
+
+.study-audio-playlist {
+    display: grid;
+    gap: 0.6rem;
+}
+
+.study-audio-playing {
+    border-color: rgba(15, 118, 110, 0.45);
+    background: rgba(204, 251, 241, 0.8);
+}
+
+.study-dashboard-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.study-dashboard-grid-top {
+    margin-bottom: 1rem;
+}
+
+.study-pomodoro {
+    display: grid;
+    gap: 1rem;
+}
+
+.study-pomodoro-shell {
+    position: relative;
+    display: grid;
+    place-items: center;
+    min-height: 17rem;
+    border-radius: 1.5rem;
+    background: radial-gradient(circle at top, rgba(15, 118, 110, 0.14), transparent 55%), linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(220, 252, 231, 0.72));
+    border: 1px solid rgba(15, 118, 110, 0.14);
+}
+
+.study-pomodoro-ring {
+    width: min(18rem, 100%);
+    max-width: 18rem;
+    transform: rotate(-90deg);
+}
+
+.study-pomodoro-ring-track,
+.study-pomodoro-ring-progress {
+    fill: none;
+    stroke-width: 10;
+}
+
+.study-pomodoro-ring-track {
+    stroke: rgba(148, 163, 184, 0.18);
+}
+
+.study-pomodoro-ring-progress {
+    stroke: #0f766e;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.9s linear;
+}
+
+.study-pomodoro-readout {
+    position: absolute;
+    display: grid;
+    gap: 0.35rem;
+    justify-items: center;
+}
+
+.study-pomodoro-readout strong {
+    font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.study-pomodoro-readout span {
+    color: var(--muted-strong);
+    font-weight: 700;
+}
+
+.study-pomodoro-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.study-pomodoro-controls {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.study-analytics-metrics {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    margin-bottom: 1rem;
+}
+
+.study-analytics-card {
+    display: grid;
+    gap: 0.35rem;
+    padding: 1rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.study-analytics-card span {
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.study-analytics-card strong {
+    font-size: 1.75rem;
+}
+
+.study-streak strong::before {
+    content: "Flame ";
+    color: #ea580c;
+    font-size: 0.95rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.study-chart-container {
+    height: 20rem;
+    margin-top: 1rem;
+    padding: 1rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.study-progress-list {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.study-progress-card {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.95rem 1rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(248, 250, 252, 0.92);
+}
+
+.study-progress-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    color: var(--muted-strong);
+}
+
+.study-progress-bar {
+    width: 100%;
+    height: 0.9rem;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.18);
+    overflow: hidden;
+}
+
+.study-progress-bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0f766e, #14b8a6);
+}
+
+@media (max-width: 900px) {
+    .study-rating-buttons {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .study-dashboard-grid,
+    .study-pomodoro-form {
+        grid-template-columns: 1fr;
+    }
+}
+
+.study-calendar-cell {
+    min-height: 7rem;
+    padding: 0.75rem;
+    border-radius: 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(248, 250, 252, 0.88);
+    display: grid;
+    gap: 0.35rem;
+}
+
+.study-calendar-pill {
+    display: inline-flex;
+    padding: 0.25rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    background: rgba(15, 118, 110, 0.12);
+    color: #0f766e;
+}
+
+.study-today-panel {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.study-calendar-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.study-calendar-shell {
+    margin-top: 1rem;
+}
+
 .status-card {
     gap: 1.15rem;
     min-height: 100%;
