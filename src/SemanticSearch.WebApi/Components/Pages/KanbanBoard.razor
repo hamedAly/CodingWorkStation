@@ -135,6 +135,7 @@ else
         _boardState.Items
             .Select(i => i.TeamProject ?? ExtractProject(i.AreaPath))
             .Where(p => !string.IsNullOrEmpty(p))
+            .Select(p => p!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(p => p);
 
@@ -142,6 +143,7 @@ else
         _boardState.Items
             .Select(i => i.WorkItemType)
             .Where(t => !string.IsNullOrEmpty(t))
+            .Select(t => t!)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(t => t);
 
