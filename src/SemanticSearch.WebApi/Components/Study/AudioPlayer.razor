@@ -1,0 +1,54 @@
+@inject IJSRuntime JS
+
+@if (string.IsNullOrWhiteSpace(AudioUrl))
+{
+    <div class="empty-state">Select a chapter audio file to start listening.</div>
+}
+else
+{
+    <section class="study-audio-player">
+        @if (!string.IsNullOrWhiteSpace(Title))
+        {
+            <strong>@Title</strong>
+        }
+        <audio class="study-audio-element" controls @ref="_audioElement" src="@AudioUrl" @onended="HandleEndedAsync"></audio>
+        <label class="study-audio-speed">
+            Speed
+            <select @bind="_selectedSpeed" @bind:after="ApplyPlaybackRateAsync">
+                <option value="0.5">0.5x</option>
+                <option value="0.75">0.75x</option>
+                <option value="1">1x</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="2">2x</option>
+            </select>
+        </label>
+    </section>
+}
+
+@code {
+    private ElementReference _audioElement;
+    private double _selectedSpeed = 1d;
+
+    [Parameter]
+    public string? AudioUrl { get; set; }
+
+    [Parameter]
+    public string? Title { get; set; }
+
+    [Parameter]
+    public EventCallback OnEnded { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await ApplyPlaybackRateAsync();
+    }
+
+    private Task HandleEndedAsync()
+        => OnEnded.InvokeAsync();
+
+    private async Task ApplyPlaybackRateAsync()
+    {
+        await JS.InvokeVoidAsync("studyAudio.setPlaybackRate", _audioElement, _selectedSpeed);
+    }
+}

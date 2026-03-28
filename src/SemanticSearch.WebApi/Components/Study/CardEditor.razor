@@ -1,0 +1,143 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+<section class="study-card-editor study-section-card">
+    <div class="study-section-head">
+        <h3>@(EditingCard is null ? "Add card" : "Edit card")</h3>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="study-inline-error">@_errorMessage</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <p class="banner banner-success">@_successMessage</p>
+    }
+
+    <div class="study-upload-form">
+        <textarea placeholder="Front of card" @bind="_front"></textarea>
+        <textarea placeholder="Back of card" @bind="_back"></textarea>
+        <select @bind="_chapterId">
+            <option value="">No chapter link</option>
+            @foreach (var chapter in Chapters)
+            {
+                <option value="@chapter.Id">@chapter.Title</option>
+            }
+        </select>
+        <div class="study-inline-actions">
+            <button type="button" @onclick="SaveAsync">@(EditingCard is null ? "Add card" : "Save changes")</button>
+            <button type="button" class="button-secondary" @onclick="CancelAsync">Cancel</button>
+        </div>
+    </div>
+
+    @if (ChaptersWithNotes.Count > 0)
+    {
+        <div class="study-inline-actions">
+            <select @bind="_generationChapterId">
+                <option value="">Generate from chapter notes</option>
+                @foreach (var chapter in ChaptersWithNotes)
+                {
+                    <option value="@chapter.Id">@chapter.Title</option>
+                }
+            </select>
+            <button type="button" class="button-secondary" @onclick="GenerateAsync">Generate with AI</button>
+        </div>
+    }
+</section>
+
+@code {
+    private string _front = string.Empty;
+    private string _back = string.Empty;
+    private string? _chapterId;
+    private string? _generationChapterId;
+    private string? _errorMessage;
+    private string? _successMessage;
+    private string? _editingCardId;
+
+    [Parameter, EditorRequired]
+    public string DeckId { get; set; } = string.Empty;
+
+    [Parameter]
+    public FlashCardResponse? EditingCard { get; set; }
+
+    [Parameter]
+    public IReadOnlyList<ChapterResponse> Chapters { get; set; } = [];
+
+    [Parameter]
+    public EventCallback OnSaved { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private IReadOnlyList<ChapterResponse> ChaptersWithNotes
+        => Chapters.Where(chapter => chapter.HasNotes).ToList();
+
+    protected override void OnParametersSet()
+    {
+        if (_editingCardId == EditingCard?.Id)
+            return;
+
+        _editingCardId = EditingCard?.Id;
+        _front = EditingCard?.Front ?? string.Empty;
+        _back = EditingCard?.Back ?? string.Empty;
+        _chapterId = EditingCard?.ChapterId;
+        _errorMessage = null;
+        _successMessage = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            _errorMessage = null;
+            _successMessage = null;
+
+            if (EditingCard is null)
+                await ApiClient.AddFlashCardAsync(DeckId, new AddFlashCardRequest(_front, _back, Normalize(_chapterId)));
+            else
+                await ApiClient.UpdateFlashCardAsync(DeckId, EditingCard.Id, new AddFlashCardRequest(_front, _back, Normalize(_chapterId)));
+
+            await OnSaved.InvokeAsync();
+            await CancelAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_generationChapterId))
+        {
+            _errorMessage = "Choose a chapter with notes before generating cards.";
+            return;
+        }
+
+        try
+        {
+            _errorMessage = null;
+            var generated = await ApiClient.GenerateCardsFromChapterAsync(DeckId, _generationChapterId);
+            _successMessage = $"Generated {generated.GeneratedCount} cards.";
+            await OnSaved.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task CancelAsync()
+    {
+        _editingCardId = null;
+        _front = string.Empty;
+        _back = string.Empty;
+        _chapterId = null;
+        await OnCancel.InvokeAsync();
+    }
+
+    private static string? Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
+}

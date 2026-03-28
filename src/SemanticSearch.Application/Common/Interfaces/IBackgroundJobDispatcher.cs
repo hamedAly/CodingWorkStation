@@ -4,4 +4,5 @@ public interface IBackgroundJobDispatcher
 {
     void EnqueueStandup();
     void EnqueuePrayerFetch();
+    void EnqueueStudyReminder();
 }

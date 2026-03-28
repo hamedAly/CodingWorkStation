@@ -1,0 +1,24 @@
+@page "/study/dashboard"
+@using SemanticSearch.WebApi.Components.Study
+
+<PageTitle>Study Dashboard</PageTitle>
+
+<section class="study-dashboard-grid study-dashboard-grid-top">
+    <PomodoroTimer OnSessionComplete="HandleSessionCompleteAsync" />
+    <TodayStudyPanel />
+</section>
+
+<section class="study-dashboard-grid">
+    <StudyAnalytics RefreshVersion="@_refreshVersion" />
+    <ReviewStats />
+</section>
+
+@code {
+    private int _refreshVersion;
+
+    private Task HandleSessionCompleteAsync(SemanticSearch.WebApi.Contracts.Study.StudySessionResponse session)
+    {
+        _refreshVersion++;
+        return Task.CompletedTask;
+    }
+}

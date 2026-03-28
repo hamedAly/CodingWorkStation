@@ -49,6 +49,10 @@
                                 <span class="sidebar-nav-title">@item.Label</span>
                                 <span class="sidebar-nav-summary">@GetItemDescription(item.Label)</span>
                             </span>
+                            @if (item.Label == "Review Cards" && _dueCardCount > 0)
+                            {
+                                <span class="sidebar-item-badge">@_dueCardCount</span>
+                            }
                         </NavLink>
                     }
                     else

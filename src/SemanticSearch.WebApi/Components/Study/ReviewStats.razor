@@ -1,0 +1,135 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<section class="study-section-card">
+    <div class="study-section-head">
+        <div>
+            <h3>Review analytics</h3>
+            <p>Retention, forecasted workload, and recent answer quality.</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <p class="banner banner-error">@_errorMessage</p>
+    }
+    else if (_isLoading)
+    {
+        <div class="empty-state">Loading review analytics...</div>
+    }
+    else if (_stats is null)
+    {
+        <div class="empty-state">No review data yet.</div>
+    }
+    else
+    {
+        <div class="study-analytics-metrics">
+            <article class="study-analytics-card">
+                <span>Retention rate</span>
+                <strong>@_stats.RetentionRate.ToString("0.#")%</strong>
+            </article>
+            <article class="study-analytics-card">
+                <span>Forecast days</span>
+                <strong>@_stats.Forecast.Count</strong>
+            </article>
+            <article class="study-analytics-card">
+                <span>Recent review days</span>
+                <strong>@_stats.RecentHistory.Count</strong>
+            </article>
+        </div>
+
+        <div class="study-chart-container">
+            <div class="study-section-head">
+                <h4>Upcoming reviews</h4>
+            </div>
+            <canvas id="@_forecastCanvasId"></canvas>
+        </div>
+
+        <div class="study-chart-container">
+            <div class="study-section-head">
+                <h4>Accuracy trend</h4>
+            </div>
+            <canvas id="@_accuracyCanvasId"></canvas>
+        </div>
+    }
+</section>
+
+@code {
+    private readonly string _forecastCanvasId = $"study-review-forecast-{Guid.NewGuid():N}";
+    private readonly string _accuracyCanvasId = $"study-review-accuracy-{Guid.NewGuid():N}";
+    private ReviewStatsResponse? _stats;
+    private bool _isLoading;
+    private bool _renderCharts;
+    private string? _errorMessage;
+    private int? _lastRefreshVersion;
+
+    [Parameter]
+    public int RefreshVersion { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastRefreshVersion == RefreshVersion && _stats is not null)
+            return;
+
+        _lastRefreshVersion = RefreshVersion;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_renderCharts || _stats is null)
+            return;
+
+        _renderCharts = false;
+
+        await JS.InvokeVoidAsync(
+            "studyDashboard.renderBarChart",
+            _forecastCanvasId,
+            _stats.Forecast.Select(day => day.Date.ToString("MMM d")).ToArray(),
+            _stats.Forecast.Select(day => day.DueCount).ToArray(),
+            "Due cards",
+            "rgb(15, 118, 110)");
+
+        await JS.InvokeVoidAsync(
+            "studyDashboard.renderLineChart",
+            _accuracyCanvasId,
+            _stats.RecentHistory.Select(day => day.Date.ToString("MMM d")).ToArray(),
+            _stats.RecentHistory.Select(day => Math.Round(day.Accuracy, 1)).ToArray(),
+            "Accuracy",
+            "rgb(37, 99, 235)");
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            _stats = await ApiClient.GetReviewStatsAsync();
+            _renderCharts = _stats is not null;
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("studyDashboard.destroyChart", _forecastCanvasId);
+            await JS.InvokeVoidAsync("studyDashboard.destroyChart", _accuracyCanvasId);
+        }
+        catch
+        {
+        }
+    }
+}

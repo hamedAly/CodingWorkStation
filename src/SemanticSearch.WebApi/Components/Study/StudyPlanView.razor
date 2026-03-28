@@ -1,0 +1,64 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+@if (_plan is null)
+{
+    <p>Select a plan to view its schedule.</p>
+}
+else
+{
+    <section class="study-section-card">
+        <div class="study-section-head">
+            <h3>@_plan.Title</h3>
+            <p>@_plan.StartDate.ToShortDateString() to @_plan.EndDate.ToShortDateString() · @_plan.ProgressPercent%</p>
+        </div>
+
+        <div class="study-plan-progress">
+            <div class="study-plan-progress-fill" style="width:@_plan.ProgressPercent%"></div>
+        </div>
+
+        <div class="study-plan-list">
+            @foreach (var item in _plan.Items.OrderBy(item => item.ScheduledDate).ThenBy(item => item.SortOrder))
+            {
+                <div class="study-plan-item">
+                    <div>
+                        <strong>@item.Title</strong>
+                        <p>@item.ScheduledDate.ToShortDateString()</p>
+                    </div>
+                    <div class="study-chapter-actions">
+                        <span class="status-pill">@item.Status</span>
+                        <button type="button" @onclick='() => UpdateStatusAsync(item.Id, "InProgress")'>Start</button>
+                        <button type="button" @onclick='() => UpdateStatusAsync(item.Id, "Done")'>Done</button>
+                        <button type="button" @onclick='() => UpdateStatusAsync(item.Id, "Skipped")'>Skip</button>
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    private StudyPlanDetailResponse? _plan;
+
+    [Parameter]
+    public string? PlanId { get; set; }
+
+    [Parameter]
+    public EventCallback OnChanged { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(PlanId))
+            _plan = await ApiClient.GetStudyPlanAsync(PlanId);
+    }
+
+    private async Task UpdateStatusAsync(string itemId, string status)
+    {
+        if (PlanId is null)
+            return;
+
+        await ApiClient.UpdatePlanItemStatusAsync(PlanId, itemId, status);
+        _plan = await ApiClient.GetStudyPlanAsync(PlanId);
+        await OnChanged.InvokeAsync();
+    }
+}

@@ -1,0 +1,38 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+<section class="study-section-card">
+    <div class="study-section-head">
+        <h3>Today</h3>
+        <p>@DateTime.Today.ToLongDateString()</p>
+    </div>
+
+    @if (_today is null || (_today.PlanItems.Count == 0 && _today.DueFlashCardCount == 0))
+    {
+        <p>Nothing due today.</p>
+    }
+    else
+    {
+        <div class="study-today-panel">
+            @foreach (var item in _today.PlanItems)
+            {
+                <div class="study-plan-item">
+                    <div>
+                        <strong>@item.Title</strong>
+                        <p>@item.Status</p>
+                    </div>
+                </div>
+            }
+            <p>Due flashcards: @_today.DueFlashCardCount</p>
+        </div>
+    }
+</section>
+
+@code {
+    private TodayStudyItemsResponse? _today;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _today = await ApiClient.GetTodayStudyItemsAsync();
+    }
+}

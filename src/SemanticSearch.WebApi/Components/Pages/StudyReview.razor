@@ -1,0 +1,35 @@
+@page "/study/review"
+@using SemanticSearch.WebApi.Components.Study
+
+<PageTitle>Review Cards</PageTitle>
+
+<nav class="study-tab-nav">
+    <button type="button" class="@TabClass("review")" @onclick='() => SelectTab("review")'>Review</button>
+    <button type="button" class="@TabClass("decks")" @onclick='() => SelectTab("decks")'>Decks</button>
+    <button type="button" class="@TabClass("stats")" @onclick='() => SelectTab("stats")'>Stats</button>
+</nav>
+
+@if (_activeTab == "decks")
+{
+    <DeckManager />
+}
+else if (_activeTab == "stats")
+{
+    <ReviewStats />
+}
+else
+{
+    <FlashCardReview />
+}
+
+@code {
+    private string _activeTab = "review";
+
+    private void SelectTab(string tab)
+    {
+        _activeTab = tab;
+    }
+
+    private string TabClass(string tab)
+        => _activeTab == tab ? "study-tab-active" : string.Empty;
+}

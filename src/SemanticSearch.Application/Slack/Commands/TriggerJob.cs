@@ -26,8 +26,11 @@ public sealed class TriggerJobCommandHandler : IRequestHandler<TriggerJobCommand
             case "prayer-fetch":
                 _dispatcher.EnqueuePrayerFetch();
                 break;
+            case "study-reminder":
+                _dispatcher.EnqueueStudyReminder();
+                break;
             default:
-                return Task.FromResult(new TriggerJobResult(false, $"Unknown job name: '{request.JobName}'. Valid values: standup, prayer-fetch."));
+                return Task.FromResult(new TriggerJobResult(false, $"Unknown job name: '{request.JobName}'. Valid values: standup, prayer-fetch, study-reminder."));
         }
         return Task.FromResult(new TriggerJobResult(true));
     }

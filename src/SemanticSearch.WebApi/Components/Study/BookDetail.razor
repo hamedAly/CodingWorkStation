@@ -1,0 +1,101 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+@inject NavigationManager NavigationManager
+
+@if (_isLoading)
+{
+    <p>Loading book...</p>
+}
+else if (_book is null)
+{
+    <p>Book not found.</p>
+}
+else
+{
+    <section class="study-book-detail">
+        <div class="study-book-sidebar">
+            <div class="study-section-card">
+                <div class="study-section-head">
+                    <h2>@_book.Title</h2>
+                    <p>@(_book.Author ?? "Unknown author")</p>
+                </div>
+                <div class="study-upload-form">
+                    <input type="text" @bind="_title" placeholder="Title" />
+                    <input type="text" @bind="_author" placeholder="Author" />
+                    <textarea @bind="_description" placeholder="Description"></textarea>
+                    <button type="button" @onclick="SaveMetadataAsync">Save details</button>
+                    <button type="button" class="study-danger-button" @onclick="DeleteBookAsync">Delete book</button>
+                </div>
+            </div>
+
+            <ChapterEditor BookId="@BookId" Chapters="@_book.Chapters" OnChapterPageJump="HandleChapterJumpAsync" OnPlayAudioRequested="HandlePlayAudioAsync" OnChanged="LoadAsync" />
+        </div>
+
+        <div class="study-book-main">
+            <PdfViewer @ref="_pdfViewer" BookId="@_book.Id" PdfUrl="@ApiClient.GetBookPdfUrl(_book.Id)" InitialPage="@_book.LastReadPage" PageCount="@_book.PageCount" OnRemoveRequested="DeleteBookAsync" />
+            <BookAudioPlaylist BookId="@_book.Id" Chapters="@_book.Chapters" SelectedChapterId="@_selectedAudioChapterId" />
+        </div>
+    </section>
+}
+
+@code {
+    private PdfViewer? _pdfViewer;
+    private BookDetailResponse? _book;
+    private bool _isLoading = true;
+    private string _title = string.Empty;
+    private string? _author;
+    private string? _description;
+    private string? _selectedAudioChapterId;
+
+    [Parameter, EditorRequired]
+    public string BookId { get; set; } = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _isLoading = true;
+        _book = await ApiClient.GetBookAsync(BookId);
+        if (_book is not null)
+        {
+            _title = _book.Title;
+            _author = _book.Author;
+            _description = _book.Description;
+        }
+
+        _isLoading = false;
+        StateHasChanged();
+    }
+
+    private async Task SaveMetadataAsync()
+    {
+        if (_book is null)
+            return;
+
+        _book = await ApiClient.UpdateBookAsync(_book.Id, new UpdateBookRequest(_title, _author, _description));
+    }
+
+    private async Task DeleteBookAsync()
+    {
+        if (_book is null)
+            return;
+
+        await ApiClient.DeleteBookAsync(_book.Id);
+        NavigationManager.NavigateTo("/study");
+    }
+
+    private async Task HandleChapterJumpAsync(int page)
+    {
+        if (_pdfViewer is not null)
+            await _pdfViewer.JumpToPageAsync(page);
+    }
+
+    private Task HandlePlayAudioAsync(string chapterId)
+    {
+        _selectedAudioChapterId = chapterId;
+        return Task.CompletedTask;
+    }
+}

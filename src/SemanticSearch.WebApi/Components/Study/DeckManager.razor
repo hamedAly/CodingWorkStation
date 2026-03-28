@@ -1,0 +1,188 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+<section class="study-book-detail">
+    <aside class="study-book-sidebar">
+        <section class="study-section-card">
+            <div class="study-section-head">
+                <h3>Create deck</h3>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <p class="study-inline-error">@_errorMessage</p>
+            }
+
+            <div class="study-upload-form">
+                <input type="text" placeholder="Deck title" @bind="_newDeckTitle" />
+                <select @bind="_newDeckBookId">
+                    <option value="">General deck</option>
+                    @foreach (var book in _books)
+                    {
+                        <option value="@book.Id">@book.Title</option>
+                    }
+                </select>
+                <button type="button" @onclick="CreateDeckAsync">Create deck</button>
+            </div>
+        </section>
+
+        <section class="study-section-card">
+            <div class="study-section-head">
+                <h3>Decks</h3>
+            </div>
+
+            <div class="study-deck-grid">
+                @foreach (var deck in _decks)
+                {
+                    <button type="button" class="study-deck-card @(deck.Id == _selectedDeckId ? "selected" : string.Empty)" @onclick="() => SelectDeckAsync(deck.Id)">
+                        <strong>@deck.Title</strong>
+                        <span>@(deck.BookTitle ?? "Any book")</span>
+                        <div class="study-inline-actions">
+                            <span class="status-pill">@deck.TotalCards cards</span>
+                            <span class="status-pill">@deck.DueCards due</span>
+                        </div>
+                    </button>
+                }
+            </div>
+        </section>
+    </aside>
+
+    <div>
+        @if (_selectedDeck is null)
+        {
+            <div class="empty-state">Choose a deck to manage cards.</div>
+        }
+        else
+        {
+            <section class="study-section-card">
+                <div class="study-section-head">
+                    <div>
+                        <h3>@_selectedDeck.Title</h3>
+                        <p>@(_selectedDeck.BookTitle ?? "No book linked") · @_selectedDeck.DueCards due</p>
+                    </div>
+                    <button type="button" class="button-secondary" @onclick="DeleteDeckAsync">Delete deck</button>
+                </div>
+
+                <div class="study-plan-list">
+                    @foreach (var card in _selectedDeck.Cards)
+                    {
+                        <article class="study-plan-item">
+                            <div>
+                                <strong>@card.Front</strong>
+                                <p>@card.Back</p>
+                            </div>
+                            <div class="study-inline-actions">
+                                <span class="status-pill">@card.Interval d</span>
+                                <button type="button" class="button-secondary" @onclick="() => EditCard(card)">Edit</button>
+                                <button type="button" class="button-secondary" @onclick="() => DeleteCardAsync(card.Id)">Delete</button>
+                            </div>
+                        </article>
+                    }
+                </div>
+            </section>
+
+            <CardEditor DeckId="@_selectedDeck.Id" EditingCard="@_editingCard" Chapters="@_chapters" OnSaved="HandleSavedAsync" OnCancel="HandleCancelledAsync" />
+        }
+    </div>
+</section>
+
+@code {
+    private IReadOnlyList<DeckSummaryResponse> _decks = [];
+    private IReadOnlyList<BookSummaryResponse> _books = [];
+    private IReadOnlyList<ChapterResponse> _chapters = [];
+    private DeckDetailResponse? _selectedDeck;
+    private FlashCardResponse? _editingCard;
+    private string? _selectedDeckId;
+    private string _newDeckTitle = string.Empty;
+    private string? _newDeckBookId;
+    private string? _errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _books = await ApiClient.GetBooksAsync() ?? [];
+        await ReloadDecksAsync();
+    }
+
+    private async Task ReloadDecksAsync()
+    {
+        _decks = await ApiClient.GetDecksAsync() ?? [];
+
+        if (!string.IsNullOrWhiteSpace(_selectedDeckId))
+            await SelectDeckAsync(_selectedDeckId);
+    }
+
+    private async Task CreateDeckAsync()
+    {
+        try
+        {
+            _errorMessage = null;
+            var deck = await ApiClient.CreateDeckAsync(new CreateDeckRequest(_newDeckTitle, Normalize(_newDeckBookId)));
+            _newDeckTitle = string.Empty;
+            _newDeckBookId = null;
+            await ReloadDecksAsync();
+            await SelectDeckAsync(deck.Id);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SelectDeckAsync(string deckId)
+    {
+        _selectedDeckId = deckId;
+        _editingCard = null;
+        _selectedDeck = await ApiClient.GetDeckAsync(deckId);
+
+        if (!string.IsNullOrWhiteSpace(_selectedDeck?.BookId))
+        {
+            var book = await ApiClient.GetBookAsync(_selectedDeck.BookId);
+            _chapters = book?.Chapters ?? [];
+        }
+        else
+        {
+            _chapters = [];
+        }
+    }
+
+    private void EditCard(FlashCardResponse card)
+    {
+        _editingCard = card;
+    }
+
+    private async Task DeleteCardAsync(string cardId)
+    {
+        if (_selectedDeck is null)
+            return;
+
+        await ApiClient.DeleteFlashCardAsync(_selectedDeck.Id, cardId);
+        await HandleSavedAsync();
+    }
+
+    private async Task DeleteDeckAsync()
+    {
+        if (_selectedDeck is null)
+            return;
+
+        await ApiClient.DeleteDeckAsync(_selectedDeck.Id);
+        _selectedDeck = null;
+        _selectedDeckId = null;
+        _editingCard = null;
+        _chapters = [];
+        await ReloadDecksAsync();
+    }
+
+    private async Task HandleSavedAsync()
+    {
+        await ReloadDecksAsync();
+    }
+
+    private Task HandleCancelledAsync()
+    {
+        _editingCard = null;
+        return Task.CompletedTask;
+    }
+
+    private static string? Normalize(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value;
+}

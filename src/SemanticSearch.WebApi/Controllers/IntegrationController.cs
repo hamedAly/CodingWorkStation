@@ -2,6 +2,7 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using SemanticSearch.Application.Slack.Commands;
 using SemanticSearch.Application.Slack.Queries;
+using SemanticSearch.Infrastructure.BackgroundJobs;
 using SemanticSearch.WebApi.Contracts.Slack;
 
 namespace SemanticSearch.WebApi.Controllers;
@@ -29,6 +30,8 @@ public sealed class IntegrationController : ControllerBase
             result.PrayerCountry,
             result.PrayerMethod,
             result.PrayerEnabled,
+            result.StudyReminderEnabled,
+            result.StudyReminderTime,
             result.UpdatedUtc));
     }
 
@@ -43,7 +46,10 @@ public sealed class IntegrationController : ControllerBase
             request.PrayerCity,
             request.PrayerCountry,
             request.PrayerMethod,
-            request.PrayerEnabled), cancellationToken);
+            request.PrayerEnabled,
+            request.StudyReminderEnabled,
+            request.StudyReminderTime), cancellationToken);
+        BackgroundJobRegistration.RegisterAll(HttpContext.RequestServices);
         return NoContent();
     }
 

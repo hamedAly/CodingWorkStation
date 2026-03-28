@@ -22,7 +22,7 @@
     <StaticWebAssetProjectMode>Default</StaticWebAssetProjectMode>
   </PropertyGroup>
 
-  <Target Name="TailwindBuild" BeforeTargets="Build" Condition="Exists('..\..\tools\tailwindcss.exe')">
+  <Target Name="TailwindBuild" BeforeTargets="Build" Condition="Exists('..\..\tools\tailwindcss.exe') and '$(SkipTailwindBuild)' != 'true'">
     <Exec Command="..\..\tools\tailwindcss.exe -i Styles\shell.input.css -o wwwroot\css\shell.css --minify"
           WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>

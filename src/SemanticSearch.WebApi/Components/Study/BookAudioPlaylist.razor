@@ -1,0 +1,72 @@
+@using SemanticSearch.WebApi.Contracts.Study
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+
+<section class="study-section-card">
+    <div class="study-section-head">
+        <h3>Audio playlist</h3>
+    </div>
+
+    @if (_chaptersWithAudio.Count == 0)
+    {
+        <div class="empty-state">No chapter audio uploaded yet.</div>
+    }
+    else
+    {
+        <div class="study-audio-playlist">
+            @foreach (var chapter in _chaptersWithAudio)
+            {
+                <button type="button" class="study-chapter-link @(chapter.Id == _selectedChapterId ? "study-audio-playing" : string.Empty)" @onclick="() => SelectChapter(chapter.Id)">
+                    <span>@chapter.Title</span>
+                    <span>Play</span>
+                </button>
+            }
+        </div>
+
+        <AudioPlayer AudioUrl="@CurrentAudioUrl" Title="@CurrentTitle" OnEnded="HandleEndedAsync" />
+    }
+</section>
+
+@code {
+    private IReadOnlyList<ChapterResponse> _chaptersWithAudio = [];
+    private string? _selectedChapterId;
+
+    [Parameter, EditorRequired]
+    public string BookId { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ChapterResponse> Chapters { get; set; } = [];
+
+    [Parameter]
+    public string? SelectedChapterId { get; set; }
+
+    private string? CurrentAudioUrl
+        => string.IsNullOrWhiteSpace(_selectedChapterId) ? null : ApiClient.GetChapterAudioUrl(BookId, _selectedChapterId);
+
+    private string? CurrentTitle
+        => _chaptersWithAudio.FirstOrDefault(chapter => chapter.Id == _selectedChapterId)?.Title;
+
+    protected override void OnParametersSet()
+    {
+        _chaptersWithAudio = Chapters.Where(chapter => chapter.HasAudio).OrderBy(chapter => chapter.SortOrder).ToList();
+        if (!string.IsNullOrWhiteSpace(SelectedChapterId) && _chaptersWithAudio.Any(chapter => chapter.Id == SelectedChapterId))
+            _selectedChapterId = SelectedChapterId;
+        _selectedChapterId ??= _chaptersWithAudio.FirstOrDefault()?.Id;
+    }
+
+    private void SelectChapter(string chapterId)
+    {
+        _selectedChapterId = chapterId;
+    }
+
+    private Task HandleEndedAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedChapterId))
+            return Task.CompletedTask;
+
+        var index = _chaptersWithAudio.Select((chapter, position) => new { chapter.Id, position }).FirstOrDefault(entry => entry.Id == _selectedChapterId)?.position ?? -1;
+        if (index >= 0 && index < _chaptersWithAudio.Count - 1)
+            _selectedChapterId = _chaptersWithAudio[index + 1].Id;
+
+        return Task.CompletedTask;
+    }
+}

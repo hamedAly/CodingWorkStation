@@ -11,19 +11,24 @@ public sealed record UpdateIntegrationSettingsCommand(
     string PrayerCity,
     string PrayerCountry,
     int PrayerMethod,
-    bool PrayerEnabled) : IRequest;
+    bool PrayerEnabled,
+    bool StudyReminderEnabled,
+    string StudyReminderTime) : IRequest;
 
 public sealed class UpdateIntegrationSettingsCommandHandler : IRequestHandler<UpdateIntegrationSettingsCommand>
 {
     private readonly IIntegrationSettingsRepository _repo;
+    private readonly IStudyReminderSettingsRepository _studyReminderSettingsRepository;
 
-    public UpdateIntegrationSettingsCommandHandler(IIntegrationSettingsRepository repo)
+    public UpdateIntegrationSettingsCommandHandler(IIntegrationSettingsRepository repo, IStudyReminderSettingsRepository studyReminderSettingsRepository)
     {
         _repo = repo;
+        _studyReminderSettingsRepository = studyReminderSettingsRepository;
     }
 
-    public Task Handle(UpdateIntegrationSettingsCommand request, CancellationToken cancellationToken)
+    public async Task Handle(UpdateIntegrationSettingsCommand request, CancellationToken cancellationToken)
     {
+        var updatedUtc = DateTime.UtcNow;
         var settings = new IntegrationSettings
         {
             SettingsId = "default",
@@ -33,9 +38,16 @@ public sealed class UpdateIntegrationSettingsCommandHandler : IRequestHandler<Up
             PrayerCountry = request.PrayerCountry,
             PrayerMethod = request.PrayerMethod,
             PrayerEnabled = request.PrayerEnabled,
-            UpdatedUtc = DateTime.UtcNow
+            UpdatedUtc = updatedUtc
         };
-        return _repo.SaveAsync(settings, cancellationToken);
+        await _repo.SaveAsync(settings, cancellationToken);
+        await _studyReminderSettingsRepository.SaveAsync(new StudyReminderSettings
+        {
+            SettingsId = "default",
+            Enabled = request.StudyReminderEnabled,
+            ReminderTime = request.StudyReminderTime,
+            UpdatedUtc = updatedUtc
+        }, cancellationToken);
     }
 }
 
@@ -57,5 +69,9 @@ public sealed class UpdateIntegrationSettingsCommandValidator : AbstractValidato
 
         RuleFor(x => x.PrayerMethod)
             .InclusiveBetween(1, 15).WithMessage("Prayer method must be between 1 and 15.");
+
+        RuleFor(x => x.StudyReminderTime)
+            .Must(time => TimeOnly.TryParse(time, out _))
+            .WithMessage("Study reminder time must be a valid HH:mm value.");
     }
 }

@@ -1,0 +1,148 @@
+@inject IJSRuntime JS
+@inject SemanticSearch.WebApi.Services.WorkspaceApiClient ApiClient
+@inject NavigationManager NavigationManager
+@implements IAsyncDisposable
+
+<div class="study-pdf-viewer">
+    <div class="study-page-nav">
+        <button type="button" @onclick="PreviousPageAsync" disabled="@(CurrentPage <= 1)">Previous</button>
+        <span>Page @CurrentPage of @ResolvedPageCount</span>
+        <button type="button" @onclick="NextPageAsync" disabled="@(CurrentPage >= ResolvedPageCount)">Next</button>
+        <input type="number" min="1" max="@ResolvedPageCount" @bind="_requestedPage" />
+        <button type="button" @onclick="JumpAsync">Go</button>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(_saveWarningMessage))
+    {
+        <div class="banner banner-warn">
+            <p>@_saveWarningMessage</p>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="banner banner-error">
+            <p>@_errorMessage</p>
+            <div class="study-inline-actions">
+                <button type="button" @onclick="GoToLibrary">Go to library to re-upload</button>
+                <button type="button" class="study-danger-button" @onclick="RemoveBookAsync">Remove book</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div id="@_containerId" class="study-pdf-canvas-shell">
+            <canvas></canvas>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly string _containerId = $"study-pdf-{Guid.NewGuid():N}";
+    private DotNetObjectReference<PdfViewer>? _selfReference;
+    private int _requestedPage;
+    private string? _errorMessage;
+    private string? _saveWarningMessage;
+
+    [Parameter, EditorRequired]
+    public string BookId { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public string PdfUrl { get; set; } = string.Empty;
+
+    [Parameter]
+    public int InitialPage { get; set; } = 1;
+
+    [Parameter]
+    public int PageCount { get; set; }
+
+    [Parameter]
+    public EventCallback OnRemoveRequested { get; set; }
+
+    public int CurrentPage { get; private set; }
+
+    private int ResolvedPageCount => Math.Max(PageCount, 1);
+
+    protected override void OnParametersSet()
+    {
+        CurrentPage = Math.Max(1, InitialPage);
+        _requestedPage = CurrentPage;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        try
+        {
+            _selfReference = DotNetObjectReference.Create(this);
+            var resolvedPages = await JS.InvokeAsync<int>("studyPdfViewer.init", _containerId, PdfUrl, CurrentPage, _selfReference);
+            if (resolvedPages > 0)
+            {
+                PageCount = resolvedPages;
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    public async Task JumpToPageAsync(int page)
+    {
+        try
+        {
+            CurrentPage = await JS.InvokeAsync<int>("studyPdfViewer.renderPage", _containerId, page);
+            _requestedPage = CurrentPage;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPageChanged(int pageNumber)
+    {
+        CurrentPage = pageNumber;
+        _requestedPage = pageNumber;
+
+        try
+        {
+            await ApiClient.UpdateLastReadPageAsync(BookId, pageNumber);
+            _saveWarningMessage = null;
+        }
+        catch (Exception ex)
+        {
+            _saveWarningMessage = $"Unable to save your last-read page right now: {ex.Message}";
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task PreviousPageAsync() => JumpToPageAsync(Math.Max(1, CurrentPage - 1));
+
+    private Task NextPageAsync() => JumpToPageAsync(Math.Min(ResolvedPageCount, CurrentPage + 1));
+
+    private Task JumpAsync() => JumpToPageAsync(Math.Clamp(_requestedPage, 1, ResolvedPageCount));
+
+    private void GoToLibrary() => NavigationManager.NavigateTo("/study");
+
+    private Task RemoveBookAsync() => OnRemoveRequested.InvokeAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("studyPdfViewer.destroy", _containerId);
+        }
+        catch
+        {
+        }
+
+        _selfReference?.Dispose();
+    }
+}
